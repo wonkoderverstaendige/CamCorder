@@ -6,7 +6,11 @@ from datetime import datetime
 print('OpenCV version', cv2.__version__)
 
 N_CAMERAS = 2
+FPS = 15.
+FOURCC = 'DIVX'
+
 FONT = cv2.FONT_HERSHEY_PLAIN
+
 
 def fmt_time(s, minimal=False):
     """
@@ -28,12 +32,12 @@ def fmt_time(s, minimal=False):
     return "{h:02d}:{m:02d}:{s:02.3f}".format(h=h, m=m, s=s + ms)
 
 
-def main(video_out=None, fourcc='X264', font=FONT):
-    if video_out is None:
-        video_out = "{:%Y%m%d_%H%M%S}.avi".format(datetime.now())
-
+def main(video_out=None, fourcc=FOURCC, font=FONT, fps=FPS):
     t_start = time.time()
-    captures = [cv2.VideoCapture(n) for n in range(1, -1, -1)]
+    captures = [cv2.VideoCapture(n) for n in range(N_CAMERAS)]
+    captures.reverse()
+    assert None not in captures
+
     writer = None
 
     while True:
@@ -59,7 +63,8 @@ def main(video_out=None, fourcc='X264', font=FONT):
                         thickness, lineType=cv2.LINE_AA)
 
             if writer is None:
-                print(size)
+                if video_out is None:
+                    video_out = "recordings/{:%Y%m%d_%H%M%S}.avi".format(datetime.now())
                 writer = cv2.VideoWriter(video_out, fourcc=cv2.VideoWriter_fourcc(*fourcc),
                                          fps=15.0, frameSize=size, isColor=True)
 
@@ -73,6 +78,9 @@ def main(video_out=None, fourcc='X264', font=FONT):
             cv2.imshow('Merged view @ {}'.format(video_out), big_frame)
             end_disp = time.time()
 
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+
             # Timing info
             end = time.time()
             elapsed = (end-start)*1000
@@ -80,10 +88,7 @@ def main(video_out=None, fourcc='X264', font=FONT):
             elapsed_disp = (end_disp - start_disp)*1000
             print('{} - {:3.0f} ms ({:2.0f} ms write, {:1.0f} ms display), {:2.1f} fps'.format(
                 fmt_time(time.time() - t_start), elapsed, elapsed_write, elapsed_disp, 1000/elapsed))
-
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-
+                
     [capture.release() for capture in captures]
     cv2.destroyAllWindows()
 
