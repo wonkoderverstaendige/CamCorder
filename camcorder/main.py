@@ -1,3 +1,9 @@
+#!/usr/bin/env python
+"""Record video from multiple cameras into one video file.
+
+Crashes when requesting non-existing cameras to be captured. Just... don't.
+"""
+
 import cv2
 import numpy as np
 import time
@@ -12,27 +18,13 @@ FOURCC = 'DIVX'
 FONT = cv2.FONT_HERSHEY_PLAIN
 
 
-def fmt_time(s, minimal=False):
-    """
-    Args:
-        s: time in seconds (float for fractional)
-        minimal: Flag, if true, only return strings for times > 0, leave rest outs
-    Returns: String formatted 99h 59min 59.9s, where elements < 1 are left out optionally.
-    """
-    ms = s - int(s)
-    s = int(s)
-    if s < 60 and minimal:
-        return "{s:02.3f}s".format(s=s + ms)
-
-    m, s = divmod(s, 60)
-    if m < 60 and minimal:
-        return "{m:02d}min {s:02.3f}s".format(m=m, s=s + ms)
-
-    h, m = divmod(m, 60)
-    return "{h:02d}:{m:02d}:{s:02.3f}".format(h=h, m=m, s=s + ms)
+def fmt_time(t):
+    h, rem = divmod(t, 3600)
+    m, s = divmod(rem, 60)
+    return "{h:02.0f}:{m:02.0f}:{s:06.3f}".format(h=h, m=m, s=s)
 
 
-def main(video_out=None, fourcc=FOURCC, font=FONT, fps=FPS):
+def main(video_out=None, fourcc=FOURCC, font=FONT, fps=FPS, record=False):
     t_start = time.time()
     captures = [cv2.VideoCapture(n) for n in range(N_CAMERAS)]
     captures.reverse()
@@ -62,16 +54,18 @@ def main(video_out=None, fourcc=FOURCC, font=FONT, fps=FPS):
             cv2.putText(big_frame, t_str, (ox, size[1]-oy), font, font_scale, (255, 255, 255),
                         thickness, lineType=cv2.LINE_AA)
 
-            if writer is None:
-                if video_out is None:
-                    video_out = "recordings/{:%Y%m%d_%H%M%S}.avi".format(datetime.now())
-                writer = cv2.VideoWriter(video_out, fourcc=cv2.VideoWriter_fourcc(*fourcc),
-                                         fps=15.0, frameSize=size, isColor=True)
-
             # Write to disk
             start_write = time.time()
-            writer.write(big_frame)
+            if record:
+                if writer is None:
+                    if video_out is None:
+                        video_out = "recordings/{:%Y%m%d_%H%M%S}.avi".format(datetime.now())
+                    writer = cv2.VideoWriter(video_out, fourcc=cv2.VideoWriter_fourcc(*fourcc),
+                                             fps=15.0, frameSize=size, isColor=True)
+
+                writer.write(big_frame)
             end_write = time.time()
+
 
             # Display merged frame
             start_disp = time.time()
