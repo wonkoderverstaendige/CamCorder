@@ -34,6 +34,12 @@ class CamCorder:
 
         self.captures = [cv2.VideoCapture(n) for n in range(self.num_cameras)]
         self.captures.reverse()
+
+        # set video size
+        for capture in self.captures:
+            capture.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
+            capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 160)
+
         assert None not in self.captures
         self.joint_frame = None
         self.capturing = True
@@ -53,6 +59,9 @@ class CamCorder:
                 self.joint_frame = np.concatenate(frames, axis=0)
                 self.frame_size = self.joint_frame.shape[::-1][1:3]
                 self.add_overlay(self.joint_frame, time.time() - self.t_start)
+            else:
+                print('Capture unsuccessful')
+                continue
 
             if self.recording:
                 self.write(self.joint_frame)
