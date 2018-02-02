@@ -14,6 +14,8 @@ print('CamCorder with OpenCV v {}'.format(cv2.__version__))
 NUM_CAMERAS = 2
 FPS = 15.
 FOURCC = 'DIVX'
+VIDEO_WIDTH = 320
+VIDEO_HEIGHT = 240
 
 FONT = cv2.FONT_HERSHEY_PLAIN
 
@@ -25,7 +27,8 @@ def fmt_time(t):
 
 
 class CamCorder:
-    def __init__(self, video_out=None, fourcc=FOURCC, font=FONT, fps=FPS, num_cameras=NUM_CAMERAS):
+    def __init__(self, video_out=None, fourcc=FOURCC, font=FONT, fps=FPS, num_cameras=NUM_CAMERAS,
+                 width=VIDEO_WIDTH, height=VIDEO_HEIGHT):
         self.num_cameras = num_cameras
         self.video_out = video_out
         self.fourcc = fourcc
@@ -37,8 +40,9 @@ class CamCorder:
 
         # set video size
         for capture in self.captures:
-            capture.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
-            capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 160)
+            capture.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+            capture.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+            capture.set(cv2.CAP_PROP_FPS, fps)
 
         assert None not in self.captures
         self.joint_frame = None
