@@ -243,7 +243,7 @@ class CamCorder:
 
     def start_recording(self):
         print('Writer fps: ', self.fps)
-        video_out = str(self.out_path / "recordings/{:%Y%m%d_%H%M%S}.{}".format(datetime.now(), VIDEO_EXT))
+        video_out = str(self.out_path / "{:%Y%m%d_%H%M%S}.{}".format(datetime.now(), VIDEO_EXT))
         self.writer = cv2.VideoWriter(video_out, fourcc=cv2.VideoWriter_fourcc(*self.fourcc),
                                       fps=self.fps, frameSize=self.frame_size)
         self.recording = True
