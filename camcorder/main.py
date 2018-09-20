@@ -26,7 +26,7 @@ REVERSE_VIEW_ORDER = False
 DRAW_OVERLAY = True
 
 DEFAULT_SOURCES = [0, 1]
-DEFAULT_OUTPUT_DIR = Path.home() / 'Videos' / 'camcorder'
+DEFAULT_OUTPUT_DIR = Path.home() / 'Videos' / 'hexmaze'
 
 FONT = cv2.FONT_HERSHEY_PLAIN
 
@@ -157,9 +157,9 @@ class CamCorder:
             if all(rvs) and all([f is not None for f in frames]):
                 # Merge individual frames along specified axis
                 self.joint_frame = np.concatenate(frames, axis=0)
-                if ROTATE:
-                    # Weird opencv issue with drawing into frame if not copied after rotation
-                    self.joint_frame = np.rot90(self.joint_frame).copy()
+                # if ROTATE:
+                #     # Weird opencv issue with drawing into frame if not copied after rotation
+                #     self.joint_frame = np.rot90(self.joint_frame).copy()
                 self.frame_size = self.joint_frame.shape[::-1][1:3]
                 self.add_overlay(self.joint_frame, time.time() - self.t_start)
             else:
