@@ -46,11 +46,11 @@ def fmt_time(t):
 def text_overlay(frame, text, x=3, y=3, f_scale=1., color=None, origin='left', thickness=1):
     if color is None:
         if frame.ndim < 3:
-            color = (255)
+            color = (255,)
         else:
             color = (255, 255, 255)
-    color_bg = [0 for _ in color]
-    outline_w = ceil(thickness + sqrt(2*thickness+1))
+    color_bg = [1 for _ in color]
+    outline_w = ceil(thickness + sqrt(2 * thickness + 1))
 
     f_h = int(13 * f_scale)
     x_ofs = x
@@ -62,7 +62,7 @@ def text_overlay(frame, text, x=3, y=3, f_scale=1., color=None, origin='left', t
         text_size, _ = cv2.getTextSize(line, fontFace=cv2.FONT_HERSHEY_PLAIN,
                                        fontScale=f_scale, thickness=outline_w)
         if origin == 'right':
-            text_x =  x_ofs - text_size[0]
+            text_x = x_ofs - text_size[0]
         else:
             text_x = x_ofs
 
@@ -83,6 +83,19 @@ def text_overlay(frame, text, x=3, y=3, f_scale=1., color=None, origin='left', t
                     color=color,
                     lineType=cv2.LINE_AA,
                     thickness=thickness)
+
+
+def generate_node_overlay(width, height, nodes):
+    node_img = np.zeros((height, width, 3), np.uint8)
+
+    for node in nodes:
+        if int(node[6]):
+            text_overlay(node_img, node[1], int(float(node[4]) * width), int(float(node[5]) * height),
+                         thickness=2, f_scale=2.)
+
+    node_img_gray = cv2.cvtColor(node_img, cv2.COLOR_BGR2GRAY)
+    _, node_mask = cv2.threshold(node_img_gray, 1, 255, cv2.THRESH_BINARY_INV)
+    return node_mask, node_img
 
 
 class CamCorder:
@@ -120,7 +133,8 @@ class CamCorder:
             capture.set(cv2.CAP_PROP_FPS, fps)
 
         assert None not in self.captures
-        self.joint_frame = None
+
+        self.joint_frame = np.zeros((width, height * 2, 3))
         self.capturing = True
         self.frame_size = None
 
@@ -128,6 +142,8 @@ class CamCorder:
         self.writer = None
 
         self.t_start = None
+
+        self.node_mask, self.node_img = generate_node_overlay(width, height * 2, node_list)
         self.loop()
 
     def loop(self):
@@ -154,9 +170,14 @@ class CamCorder:
             if self.recording:
                 self.write(self.joint_frame)
 
-            self.add_node_overlay(self.joint_frame, node_list)
+            # self.add_node_overlay(self.joint_frame, node_list)
+
             # start_disp = time.time()
-            cv2.imshow('Merged view @ {}'.format('CamCorder'), self.joint_frame)
+            if not DRAW_OVERLAY:
+                cv2.imshow('Merged view @ {}'.format('CamCorder'), self.joint_frame)
+            else:
+                cv2.imshow('Merged view @ {}'.format('CamCorder'),
+                           np.bitwise_and(self.node_mask[:, :, None], self.joint_frame) + self.node_img)
             # end_disp = time.time()
 
             kv = cv2.waitKey(1) & 0xFF
@@ -212,6 +233,13 @@ class CamCorder:
             if int(node[6]):
                 text_overlay(frame, node[1], int(float(node[4]) * VIDEO_WIDTH), int(float(node[5]) * 2 * VIDEO_HEIGHT),
                              thickness=2, f_scale=2.)
+
+    # def add_node_overlay_masked(self, frame):
+    #     # Draw node names
+    #     for node in nodes:
+    #         if int(node[6]):
+    #             text_overlay(frame, node[1], int(float(node[4]) * VIDEO_WIDTH), int(float(node[5]) * 2 * VIDEO_HEIGHT),
+    #                          thickness=2, f_scale=2.)
 
     def start_recording(self):
         print('Writer fps: ', self.fps)
