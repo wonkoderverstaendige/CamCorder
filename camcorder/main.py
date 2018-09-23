@@ -6,13 +6,14 @@ Crashes when requesting non-existing cameras to be captured. Just... don't.
 
 import csv
 import time
-from math import floor, ceil, sqrt
 import argparse
 from pathlib import Path
 from datetime import datetime
 
 import cv2
 import numpy as np
+
+from camcorder.util.utilities import text_overlay
 
 print('CamCorder with OpenCV v{}'.format(cv2.__version__))
 
@@ -41,48 +42,6 @@ def fmt_time(t):
     h, rem = divmod(t, 3600)
     m, s = divmod(rem, 60)
     return "{h:02.0f}:{m:02.0f}:{s:06.3f}".format(h=h, m=m, s=s)
-
-
-def text_overlay(frame, text, x=3, y=3, f_scale=1., color=None, origin='left', thickness=1):
-    if color is None:
-        if frame.ndim < 3:
-            color = (255,)
-        else:
-            color = (255, 255, 255)
-    color_bg = [1 for _ in color]
-    outline_w = ceil(thickness + sqrt(2 * thickness + 1))
-
-    f_h = int(13 * f_scale)
-    x_ofs = x
-    y_ofs = y + f_h
-
-    lines = text.split('\n')
-
-    for n, line in enumerate(lines):
-        text_size, _ = cv2.getTextSize(line, fontFace=cv2.FONT_HERSHEY_PLAIN,
-                                       fontScale=f_scale, thickness=outline_w)
-        if origin == 'right':
-            text_x = x_ofs - text_size[0]
-        else:
-            text_x = x_ofs
-
-        # draw text outline
-        cv2.putText(frame,
-                    line, (text_x, y_ofs + n * f_h),
-                    fontFace=cv2.FONT_HERSHEY_PLAIN,
-                    fontScale=f_scale,
-                    color=color_bg,
-                    lineType=cv2.LINE_AA,
-                    thickness=outline_w)
-
-        # actual text
-        cv2.putText(frame,
-                    line, (text_x, y_ofs + n * f_h),
-                    fontFace=cv2.FONT_HERSHEY_PLAIN,
-                    fontScale=f_scale,
-                    color=color,
-                    lineType=cv2.LINE_AA,
-                    thickness=thickness)
 
 
 def generate_node_overlay(width, height, nodes):
