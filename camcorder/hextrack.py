@@ -24,14 +24,19 @@ class HexTrack:
     def __init__(self, sources, shared_arr, frame_shape):
         threading.current_thread().name = 'HexTrack'
 
+        # Frame queue for video file output
         self.write_queue = Queue(maxsize=16)
         self.write_queue2 = Queue(maxsize=16)
-        self.ev_kill_grabber = threading.Event()
-        self.ev_kill_writer = threading.Event()
+
+        # Control events
+        self.ev_stop = threading.Event()
         self.ev_recording = threading.Event()
         self.ev_tracking = threading.Event()
 
+        # List of video sources
         self.sources = sources
+
+        self.denoising = False
 
         w, h, c = frame_shape
 
@@ -41,19 +46,21 @@ class HexTrack:
             self.frame = buf_to_numpy(self._shared_arr, shape=(h * len(sources), w, c))
         self.paused_frame = np.zeros_like(self.frame)
 
-        # Frame acquisition object
+        # Frame acquisition objects
         self.grabber = Grabber(source=self.sources[0], arr=self._shared_arr, out_queue=self.write_queue,
-                               trigger_event=self.ev_kill_grabber, id=0)
+                               trigger_event=self.ev_stop, idx=0)
         self.grabber.start()
 
         # Frame acquisition object #2
-        self.grabber2 = Grabber(source=self.sources[1], arr=self._shared_arr, out_queue=self.write_queue,
-                                trigger_event=self.ev_kill_grabber, id=1)
+        self.grabber2 = Grabber(source=self.sources[1], arr=self._shared_arr, out_queue=self.write_queue2,
+                                trigger_event=self.ev_stop, idx=1)
         self.grabber2.start()
 
         # Video storage
-        self.writer = Writer(in_queue=self.write_queue, ev_alive=self.ev_kill_writer, ev_recording=self.ev_recording)
+        self.writer = Writer(in_queue=self.write_queue, ev_alive=self.ev_stop, ev_recording=self.ev_recording, idx=0)
         self.writer.start()
+        self.writer2 = Writer(in_queue=self.write_queue2, ev_alive=self.ev_stop, ev_recording=self.ev_recording, idx=1)
+        self.writer2.start()
 
         # Online tracker
         self.tracker = Tracker()
@@ -74,22 +81,19 @@ class HexTrack:
             cv2.imshow('frame', frame)
 
             # What annoys a noisy oyster? Denoising noise annoys the noisy oyster!
-            # t = cv2.getTickCount()
-            # dn = cv2.fastNlMeansDenoisingColored(self.frame, None, 6, 6, 5, 15)
-            # print((cv2.getTickCount() - t) / cv2.getTickFrequency())
-            # cv2.imshow('denoised', dn)
+            if self.denoising:
+                t = cv2.getTickCount()
+                dn = cv2.fastNlMeansDenoisingColored(self.frame, None, 6, 6, 5, 15)
+                logging.debug((cv2.getTickCount() - t) / cv2.getTickFrequency())
+                cv2.imshow('denoised', dn)
 
             key = cv2.waitKey(1)
             if key == ord('q'):
-                self.ev_kill_grabber.set()
-                logging.debug('Grabber join request sent!')
-
-                self.ev_kill_writer.set()
-                logging.debug('Writer join request sent!')
+                self.ev_stop.set()
+                logging.debug('Join request sent!')
 
                 self.grabber.join()
                 logging.debug('Grabber joined!')
-
                 self.writer.join()
                 logging.debug('Writer joined!')
 
@@ -105,6 +109,9 @@ class HexTrack:
                 self.paused = not self.paused
                 if self.paused:
                     self.paused_frame = self.frame.copy()
+
+            elif key == ord('d'):
+                self.denoising = not self.denoising
 
 
 if __name__ == '__main__':

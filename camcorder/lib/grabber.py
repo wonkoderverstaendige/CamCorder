@@ -11,9 +11,9 @@ from camcorder.lib.framesources import Frame
 
 
 class Grabber(threading.Thread):
-    def __init__(self, source, arr, out_queue, trigger_event, id=0):  # , in_queue, out_queue
+    def __init__(self, source, arr, out_queue, trigger_event, idx=0):  # , in_queue, out_queue
         super().__init__()
-        self.id = id
+        self.id = idx
         self.name = 'Grabber ' + str(self.id)
         self.source = source
 

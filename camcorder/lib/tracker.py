@@ -9,9 +9,9 @@ def centroid(cnt):
 
 
 class Tracker:
-    def __init__(self, id=0):
+    def __init__(self, idx=0):
         super().__init__()
-        self.id = id
+        self.id = idx
 
     def track(self, frame):
         pass
