@@ -20,13 +20,14 @@ FRAME_WIDTH = 800
 FRAME_HEIGHT = 600
 FRAME_N_BYTES = FRAME_HEIGHT * FRAME_WIDTH * 3
 shared_arr = mp.Array(ctypes.c_ubyte, FRAME_N_BYTES)
+logging.debug('Created shared array: {}'.format(shared_arr))
 
 def buf_to_numpy(buf, shape):
     """Return numpy object from a raw buffer, e.g. multiprocessing Array"""
     return np.frombuffer(buf.get_obj(), dtype=np.ubyte).reshape(shape)
 
 class Grabber(threading.Thread):
-    def __init__(self, aux_queue, out_queue, trigger_event):  # , in_queue, out_queue
+    def __init__(self, out_queue, trigger_event):  # , in_queue, out_queue
         super().__init__()
         self.name = 'Grabber'
 
@@ -37,19 +38,18 @@ class Grabber(threading.Thread):
         self.width = FRAME_WIDTH
         self.height = FRAME_HEIGHT
 
-        self._aux_queue = aux_queue
         global shared_arr
         with shared_arr.get_lock():
             self._shared_arr = shared_arr
-            logging.debug(shared_arr)
+            logging.debug('Grabber shared array: {}'.format(shared_arr))
             self._fresh_frame = buf_to_numpy(shared_arr, (FRAME_HEIGHT, FRAME_WIDTH, -1))
-            logging.debug(hex(self._fresh_frame.ctypes.data))
+            logging.debug('Numpy shared buffer at {}'.format(hex(self._fresh_frame.ctypes.data)))
 
         self._write_queue = out_queue
         self._trigger = trigger_event
         self._avg_fps = 15
 
-        logging.debug('Initialized')
+        logging.debug('Grabber initialization done!')
 
     def run(self):
         logging.debug('Starting loop in {}!'.format(self.name))
@@ -65,35 +65,33 @@ class Grabber(threading.Thread):
 
         while not self._trigger.is_set():
             rt, frame = self.capture.read()
-            self.frame = Frame(self.n_frames, frame, 'grabber', add_timestamp=True, add_tickstamp=True)
+            self.frame = Frame(self.n_frames, frame, 'Grabber', add_timestamp=True, add_tickstamp=True)
 
             elapsed = (cv2.getTickCount() - t0) / cv2.getTickFrequency() * 1000
             self._avg_fps = (1 - 1 / N_FRAMES_FPS_WINDOW) * self._avg_fps + (1 / N_FRAMES_FPS_WINDOW) * 1000 / elapsed
 
+            # Every now and then show fps
             if not self.n_frames % N_FRAMES_LOG_WINDOW:
                 logging.debug(
                     'Grabbing frame {}... {} after {:.2f} ms, {:.1f} fps'.format(self.n_frames, 'OK' if rt else 'FAIL',
                                                                                  elapsed, self._avg_fps))
-            self.n_frames += 1
 
+            # Send frames to attached threads/processes
             self.relay_frames()
 
+            self.n_frames += 1
             t0 = cv2.getTickCount()
 
         logging.debug('Stopping loop in {}!'.format(self.name))
 
     def relay_frames(self):
-        # Forward frame to writer
+        # Forward frame to Writer via Queue
         try:
             self._write_queue.put(self.frame, timeout=.5)
         except Full:
             logging.warning('Dropped frame {}'.format(self.frame.index))
 
         # Forward frame for tracking and display
-        # try:
-        #     self._aux_queue.put(self.frame, timeout=.5)
-        # except Full:
-        #     pass
         # NOTE: [:] indicates to reuse the buffer
         with self._shared_arr.get_lock():
             self._fresh_frame[:] = self.frame.img
@@ -116,9 +114,11 @@ class Writer(threading.Thread):
 
         self.recording = False
 
-        self.video_fname = str(Path("C:/Users/reichler/Videos/camcorder/testing_{}.mp4"))
+        self.codec = codec = 0x00000021  # cv2.VideoWriter_fourcc(*'MP4V')
+        self.container = '.mp4'
+        self.video_fname = str(Path("C:/Users/reichler/Videos/camcorder/testing_{}" + self.container))
 
-        logging.debug('Initialized')
+        logging.debug('Writer initialization done!')
 
     def run(self):
         logging.debug('Starting loop in {}!'.format(self.name))
@@ -132,11 +132,11 @@ class Writer(threading.Thread):
             if self.recording != self._ev_recording.is_set():
                 self.recording = self._ev_recording.is_set()
                 if self.recording:
-                    ts = time.strftime("%d-%b-%y_%H_%M_%S", time.localtime(time.time()))
+                    ts = time.strftime("%d-%b-%y_%H-%M-%S", time.localtime(time.time()))
                     vname = self.video_fname.format(ts)
 
                     logging.debug('Starting Recording to {}'.format(vname))
-                    self.writer = cv2.VideoWriter(vname, 0x00000021, 15., (w, h))  # cv2.VideoWriter_fourcc(*'MP4V')
+                    self.writer = cv2.VideoWriter(vname, self.codec, 15., (w, h))
                 else:
                     logging.debug('Stopping Recording')
                     self.writer.release()
@@ -149,27 +149,42 @@ class Writer(threading.Thread):
             self.writer.release()
 
 
+class Tracker:
+    def __init__(self):
+        super().__init__()
+
+    def track(self, frame):
+        pass
+
+
 class HexTrack:
     def __init__(self):
-        self.frame_queue = Queue(maxsize=1)
+        threading.current_thread().name = 'HexTrack'
+
         self.write_queue = Queue(maxsize=16)
         self.ev_kill_grabber = threading.Event()
         self.ev_kill_writer = threading.Event()
-        self.ev_rec_writer = threading.Event()
+        self.ev_recording = threading.Event()
+        self.ev_tracking = threading.Event()
 
-        self.grabber = Grabber(aux_queue=self.frame_queue, out_queue=self.write_queue,
+        # Frame acquisition object
+        self.grabber = Grabber(out_queue=self.write_queue,
                                trigger_event=self.ev_kill_grabber)
         self.grabber.start()
         self.frame = None
         global shared_arr
         with shared_arr.get_lock():
             self._shared_arr = shared_arr
-            logging.debug(repr(self._shared_arr))
+            logging.debug('Grabber shared array: {}'.format(self._shared_arr))
 
-        self.writer = Writer(in_queue=self.write_queue, ev_alive=self.ev_kill_writer, ev_recording=self.ev_rec_writer)
+        # Video storage
+        self.writer = Writer(in_queue=self.write_queue, ev_alive=self.ev_kill_writer, ev_recording=self.ev_recording)
         self.writer.start()
 
-        logging.debug('Initialized')
+        # Online tracker
+        self.tracker = Tracker()
+
+        logging.debug('HexTrack initialization done!')
 
     def run(self):
         while self.grabber.is_alive():
@@ -199,10 +214,10 @@ class HexTrack:
                     break
 
                 elif key == ord('r'):
-                    if not self.ev_rec_writer.is_set():
-                        self.ev_rec_writer.set()
+                    if not self.ev_recording.is_set():
+                        self.ev_recording.set()
                     else:
-                        self.ev_rec_writer.clear()
+                        self.ev_recording.clear()
 
 
 if __name__ == '__main__':
