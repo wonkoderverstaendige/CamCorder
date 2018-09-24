@@ -10,21 +10,25 @@ import numpy as np
 
 from camcorder.lib.framesources import Frame
 
-logging.basicConfig(level=logging.DEBUG,
-                    format='(%(threadName)-9s) %(message)s', )
+logging.basicConfig(level=logging.DEBUG, format='(%(threadName)-9s) %(message)s', )
 
 N_FRAMES_LOG_WINDOW = 100
 N_FRAMES_FPS_WINDOW = 10
 
-FRAME_WIDTH = 800
-FRAME_HEIGHT = 600
+FRAME_WIDTH = 640
+FRAME_HEIGHT = 480
 FRAME_N_BYTES = FRAME_HEIGHT * FRAME_WIDTH * 3
+FRAME_FPS = 15.
+
+# shared buffer for transferring frames between threads/processes
 shared_arr = mp.Array(ctypes.c_ubyte, FRAME_N_BYTES)
 logging.debug('Created shared array: {}'.format(shared_arr))
+
 
 def buf_to_numpy(buf, shape):
     """Return numpy object from a raw buffer, e.g. multiprocessing Array"""
     return np.frombuffer(buf.get_obj(), dtype=np.ubyte).reshape(shape)
+
 
 class Grabber(threading.Thread):
     def __init__(self, out_queue, trigger_event):  # , in_queue, out_queue
@@ -47,7 +51,7 @@ class Grabber(threading.Thread):
 
         self._write_queue = out_queue
         self._trigger = trigger_event
-        self._avg_fps = 15
+        self._avg_fps = FRAME_FPS
 
         logging.debug('Grabber initialization done!')
 
@@ -58,8 +62,8 @@ class Grabber(threading.Thread):
         self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
         self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
 
-        # MAXIMUM fps. If light conditions drop, it may drop the frame rate no matter what you ask.
-        self.capture.set(cv2.CAP_PROP_FPS, 20.)
+        # MAXIMUM fps. This is more a recommendation, most cameras don't listen to this.
+        self.capture.set(cv2.CAP_PROP_FPS, FRAME_FPS)
 
         t0 = cv2.getTickCount()
 
@@ -68,6 +72,7 @@ class Grabber(threading.Thread):
             self.frame = Frame(self.n_frames, frame, 'Grabber', add_timestamp=True, add_tickstamp=True)
 
             elapsed = (cv2.getTickCount() - t0) / cv2.getTickFrequency() * 1000
+            t0 = cv2.getTickCount()
             self._avg_fps = (1 - 1 / N_FRAMES_FPS_WINDOW) * self._avg_fps + (1 / N_FRAMES_FPS_WINDOW) * 1000 / elapsed
 
             # Every now and then show fps
@@ -80,7 +85,6 @@ class Grabber(threading.Thread):
             self.relay_frames()
 
             self.n_frames += 1
-            t0 = cv2.getTickCount()
 
         logging.debug('Stopping loop in {}!'.format(self.name))
 
@@ -114,7 +118,7 @@ class Writer(threading.Thread):
 
         self.recording = False
 
-        self.codec = codec = 0x00000021  # cv2.VideoWriter_fourcc(*'MP4V')
+        self.codec = 0x00000021  # cv2.VideoWriter_fourcc(*'MP4V')
         self.container = '.mp4'
         self.video_fname = str(Path("C:/Users/reichler/Videos/camcorder/testing_{}" + self.container))
 
