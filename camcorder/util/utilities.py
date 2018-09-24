@@ -1,6 +1,7 @@
 from math import ceil, sqrt
 
 import cv2
+import numpy as np
 
 
 def text_overlay(frame, text, x=3, y=3, f_scale=1., color=None, origin='left', thickness=1):
@@ -43,3 +44,8 @@ def text_overlay(frame, text, x=3, y=3, f_scale=1., color=None, origin='left', t
                     color=color,
                     lineType=cv2.LINE_AA,
                     thickness=thickness)
+
+
+def buf_to_numpy(buf, shape, count=-1, offset=0):
+    """Return numpy object from a raw buffer, e.g. multiprocessing Array"""
+    return np.frombuffer(buf.get_obj(), dtype=np.ubyte, count=count, offset=offset).reshape(shape)
