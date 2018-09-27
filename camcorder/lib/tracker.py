@@ -1,6 +1,7 @@
 import cv2
 import math
 import numpy as np
+import logging
 
 from camcorder.util.defaults import *
 
@@ -37,20 +38,25 @@ class Tracker:
         self.thresh_detect = 255 - thresh_detect
 
         self.mask_frame = np.zeros((600, 800), np.uint8)
+        self.have_mask = False
 
         self.nodes = nodes[self.id]
         self.results = []
         self.last_node = None
 
     def track(self, frame):
-        node_update = False
+        node_updated = False
         img = frame[self.id * 600:(self.id + 1) * 600, :]
         foi = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
 
-        # With async frame grabbing, actual first frame(s) might still be zeroed out
-        if self.n_frames < 3:
+        # It takes time to fire up the cameras, so first frames might be zeros.
+        # Check until we have a mask
+        if not self.have_mask and np.sum(np.sum(foi)):
+            logging.debug('Creating mask')
             _, mask = cv2.threshold(foi, self.thresh_mask, 255, cv2.THRESH_BINARY)
             self.mask_frame = cv2.morphologyEx(mask, cv2.MORPH_OPEN, KERNEL_3)
+            self.have_mask = True
+
 
         masked = cv2.bitwise_not(foi) * (self.mask_frame // 255)
         masked = cv2.morphologyEx(masked, cv2.MORPH_OPEN, KERNEL_3)
@@ -128,4 +134,8 @@ class Tracker:
 
 
         self.n_frames += 1
-        return self.last_node
+        if node_updated:
+            return self.last_node
+        else:
+            return None
+

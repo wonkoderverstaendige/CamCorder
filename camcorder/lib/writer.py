@@ -6,6 +6,7 @@ from queue import Empty
 
 import cv2
 
+from camcorder.util.defaults import *
 
 class Writer(threading.Thread):
     def __init__(self, in_queue, ev_alive, ev_recording, idx=0):
@@ -25,9 +26,9 @@ class Writer(threading.Thread):
 
         self.recording = False
 
-        self.codec = 0x00000021  # cv2.VideoWriter_fourcc(*'MP4V')
-        self.container = '.mp4'
-        self.video_fname = str(Path("C:/Users/reichler/Videos/camcorder/{}_cam_{}" + self.container))
+        self.codec = cv2.VideoWriter_fourcc(*VIDEO_CODEC)  # cv2.VideoWriter_fourcc(*'MP4V')
+        self.container = VIDEO_CONTAINER
+        self.video_fname = str(Path.home() / "Videos/hextrack/{}_cam_{}") + self.container
 
         logging.debug('Writer initialization done!')
 

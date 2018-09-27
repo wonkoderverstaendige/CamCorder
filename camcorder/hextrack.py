@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import ctypes
 import argparse
 import logging
@@ -18,6 +19,12 @@ from camcorder.lib.tracker import Tracker
 SHARED_ARR = None
 
 
+def fmt_time(t):
+    h, rem = divmod(t, 3600)
+    m, s = divmod(rem, 60)
+    return "{h:02.0f}:{m:02.0f}:{s:06.3f}".format(h=h, m=m, s=s)
+
+
 class HexTrack:
     def __init__(self, sources, shared_arr, frame_shape):
         threading.current_thread().name = 'HexTrack'
@@ -26,6 +33,7 @@ class HexTrack:
         self.ev_stop = threading.Event()
         self.ev_recording = threading.Event()
         self.ev_tracking = threading.Event()
+        self.t_phase = cv2.getTickCount()
 
         # List of video sources
         self.sources = sources
@@ -58,12 +66,15 @@ class HexTrack:
 
         # Scrolling frame on side
         self.node_frame = np.zeros((FRAME_HEIGHT, 200), dtype=np.uint8)
-        self.node_frame[:20] = 255
+        self.node_frame[:5] = 255
 
         # Start up threads/processes
         for n in range(len(sources)):
             self.grabbers[n].start()
             self.writers[n].start()
+
+        cv2.namedWindow('HexTrack', cv2.WINDOW_AUTOSIZE)
+        cv2.namedWindow('Node visits', cv2.WINDOW_AUTOSIZE)
 
         logging.debug('HexTrack initialization done!')
 
@@ -86,10 +97,13 @@ class HexTrack:
                 node_updates = [tracker.track(frame) for tracker in self.trackers]
                 for n, res in enumerate(node_updates):
                     if res is not None:
-                        pass
+                        cv2.putText(self.node_frame, str(res), (50 + n*100, 30), FONT, 1., (255, 255, 255)) 
 
-            cv2.imshow('frame', frame)
+            self.add_overlay(frame, (cv2.getTickCount() - self.t_phase) /cv2.getTickFrequency())
+
+            cv2.imshow('HexTrack', frame)
             cv2.imshow('Node visits', self.node_frame)
+
             # What annoys a noisy oyster? Denoising noise annoys the noisy oyster!
             # This is for demonstrating a slow processing step not hindering the acquisition/writing threads
             if self.denoising and ALLOW_DUMMY_PROCESSING:
@@ -114,6 +128,7 @@ class HexTrack:
                 break
 
             elif key == ord('r'):
+                self.t_phase = cv2.getTickCount()
                 if not self.ev_recording.is_set():
                     self.ev_recording.set()
                 else:
@@ -126,6 +141,31 @@ class HexTrack:
 
             elif key == ord('d'):
                 self.denoising = not self.denoising
+
+    def add_overlay(self, frame, t):
+        t_str = fmt_time(t)
+        ox, oy = 4, 4
+        osx = 15
+        thickness = 1
+        font_scale = 1.2
+
+        ts, bl = cv2.getTextSize(t_str, FONT, font_scale, thickness + 2)
+
+        if not self.ev_recording.is_set():
+            bg, fg = (0, 0, 0), (255, 255, 255)
+            radius = 0
+        else:
+            bg, fg = (255, 255, 255), (0, 0, 0)
+            radius = 8
+
+        cv2.rectangle(frame, (ox - thickness, frame.shape[0] - oy + thickness),
+                      (ox + ts[0] + 2 * radius, frame.shape[0] - oy - ts[1] - thickness), bg, cv2.FILLED)
+
+        cv2.putText(frame, t_str, (ox, frame.shape[0] - oy), FONT, font_scale, fg,
+                    thickness, lineType=cv2.LINE_AA)
+
+        if self.ev_recording.is_set():
+            cv2.circle(frame, (ox + ts[0] + radius, frame.shape[0] - ts[1] // 2 - oy), radius, (0, 0, 255), -1)
 
 
 if __name__ == '__main__':

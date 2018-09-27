@@ -16,7 +16,10 @@ class Grabber(threading.Thread):
         super().__init__()
         self.id = idx
         self.name = 'Grabber ' + str(self.id)
-        self.source = source
+        try:
+            self.source = int(source)
+        except ValueError:
+            self.source = source
 
         self.n_frames = 0
         self.capture = None
