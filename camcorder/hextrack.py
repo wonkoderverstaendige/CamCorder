@@ -8,8 +8,8 @@ import multiprocessing as mp
 import cv2
 import numpy as np
 
-from camcorder.util.defaults import FRAME_WIDTH, FRAME_HEIGHT, FRAME_COLORS, FRAME_FPS, FRAME_SOURCES
-from camcorder.util.utilities import buf_to_numpy
+from camcorder.util.defaults import *
+from camcorder.util.utilities import buf_to_numpy, text_overlay
 from camcorder.lib.grabber import Grabber
 from camcorder.lib.writer import Writer
 from camcorder.lib.tracker import Tracker
@@ -30,6 +30,7 @@ class HexTrack:
         # List of video sources
         self.sources = sources
 
+        # dummy
         self.denoising = False
 
         w, h, c = frame_shape
@@ -55,6 +56,10 @@ class HexTrack:
         # Online tracker
         self.trackers = [Tracker(idx=n) for n in range(len(sources))]
 
+        # Scrolling frame on side
+        self.node_frame = np.zeros((FRAME_HEIGHT, 200), dtype=np.uint8)
+        self.node_frame[:20] = 255
+
         # Start up threads/processes
         for n in range(len(sources)):
             self.grabbers[n].start()
@@ -76,14 +81,18 @@ class HexTrack:
                 # or the overhead of making a full frame copy.
                 # TODO: Blit the frame here into an allocated display buffer
                 frame = self.frame.copy()
-                for tracker in self.trackers:
-                    res = tracker.track(frame)
+                self.node_frame[2:] = self.node_frame[:-2]
+                self.node_frame[:2] = 0
+                node_updates = [tracker.track(frame) for tracker in self.trackers]
+                for n, res in enumerate(node_updates):
+                    if res is not None:
+                        pass
 
-            cv2.imshow('res', res)
             cv2.imshow('frame', frame)
+            cv2.imshow('Node visits', self.node_frame)
             # What annoys a noisy oyster? Denoising noise annoys the noisy oyster!
             # This is for demonstrating a slow processing step not hindering the acquisition/writing threads
-            if self.denoising:
+            if self.denoising and ALLOW_DUMMY_PROCESSING:
                 t = cv2.getTickCount()
                 dn = cv2.fastNlMeansDenoisingColored(self.frame, None, 6, 6, 5, 15)
                 logging.debug((cv2.getTickCount() - t) / cv2.getTickFrequency())

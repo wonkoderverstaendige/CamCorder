@@ -11,6 +11,8 @@ FRAME_ADD_TIMESTAMP = False
 
 SLOW_ON_VIDEO_FILE = True
 
+ALLOW_DUMMY_PROCESSING = False
+
 NODES_A = {1: {'use': None, 'x': 73, 'y': 66},
            2: {'use': None, 'x': 211, 'y': 6},
            3: {'use': None, 'x': 345, 'y': 81},

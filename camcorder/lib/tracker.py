@@ -43,6 +43,7 @@ class Tracker:
         self.last_node = None
 
     def track(self, frame):
+        node_update = False
         img = frame[self.id * 600:(self.id + 1) * 600, :]
         foi = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
 
@@ -101,7 +102,8 @@ class Tracker:
 
             if self.last_node != closest_node:
                 self.last_node = closest_node
-                print('Tracker {}: Node visit {}'.format(self.id, self.last_node))
+                node_updated = True
+                print('Tracker {}: {} {}'.format(self.id, '    ' * self.id, self.last_node))
 
         # Label nodes
         for node_id, node in self.nodes.items():
@@ -126,4 +128,4 @@ class Tracker:
 
 
         self.n_frames += 1
-        return masked
+        return self.last_node
