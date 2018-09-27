@@ -1,7 +1,6 @@
-from math import ceil, sqrt
-
 import cv2
 import numpy as np
+from math import ceil, sqrt
 
 
 def text_overlay(frame, text, x=3, y=3, f_scale=1., color=None, origin='left', thickness=1):
@@ -49,3 +48,9 @@ def text_overlay(frame, text, x=3, y=3, f_scale=1., color=None, origin='left', t
 def buf_to_numpy(buf, shape, count=-1, offset=0):
     """Return numpy object from a raw buffer, e.g. multiprocessing Array"""
     return np.frombuffer(buf.get_obj(), dtype=np.ubyte, count=count, offset=offset).reshape(shape)
+
+
+def fmt_time(t):
+    h, rem = divmod(t, 3600)
+    m, s = divmod(rem, 60)
+    return "{h:02.0f}:{m:02.0f}:{s:06.3f}".format(h=h, m=m, s=s)

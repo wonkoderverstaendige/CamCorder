@@ -6,23 +6,16 @@ import threading
 from queue import Queue
 import multiprocessing as mp
 
-import cv2
 import numpy as np
 
 from camcorder.util.defaults import *
-from camcorder.util.utilities import buf_to_numpy, text_overlay
+from camcorder.util.utilities import buf_to_numpy, fmt_time
 from camcorder.lib.grabber import Grabber
 from camcorder.lib.writer import Writer
 from camcorder.lib.tracker import Tracker
 
 # shared buffer for transferring frames between threads/processes
 SHARED_ARR = None
-
-
-def fmt_time(t):
-    h, rem = divmod(t, 3600)
-    m, s = divmod(rem, 60)
-    return "{h:02.0f}:{m:02.0f}:{s:06.3f}".format(h=h, m=m, s=s)
 
 
 class HexTrack:
@@ -81,9 +74,7 @@ class HexTrack:
         self.paused = False
 
     def run(self):
-        res = None
         while all([grabber.is_alive() for grabber in self.grabbers]):
-
             if self.paused:
                 frame = self.paused_frame
             else:
@@ -99,7 +90,7 @@ class HexTrack:
                     if res is not None:
                         cv2.putText(self.node_frame, str(res), (50 + n*100, 30), FONT, 1., (255, 255, 255)) 
 
-            self.add_overlay(frame, (cv2.getTickCount() - self.t_phase) /cv2.getTickFrequency())
+            self.add_overlay(frame, (cv2.getTickCount() - self.t_phase) / cv2.getTickFrequency())
 
             cv2.imshow('HexTrack', frame)
             cv2.imshow('Node visits', self.node_frame)
@@ -112,15 +103,18 @@ class HexTrack:
                 logging.debug((cv2.getTickCount() - t) / cv2.getTickFrequency())
                 cv2.imshow('denoised', dn)
 
+            # Event loop call
             key = cv2.waitKey(1)
             if key == ord('q'):
                 self.ev_stop.set()
                 logging.debug('Join request sent!')
 
+                # Shut down Grabbers
                 for grabber in self.grabbers:
                     grabber.join()
                 logging.debug('All Grabbers joined!')
 
+                # Shut down Writers
                 for writer in self.writers:
                     writer.join()
                 logging.debug('All Writers joined!')
@@ -145,7 +139,7 @@ class HexTrack:
     def add_overlay(self, frame, t):
         t_str = fmt_time(t)
         ox, oy = 4, 4
-        osx = 15
+        # osx = 15
         thickness = 1
         font_scale = 1.2
 

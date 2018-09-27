@@ -20,14 +20,17 @@ KERNEL_3 = np.ones((3, 3), np.uint8)
 
 nodes = [NODES_A, NODES_B]
 
+
 def centroid(cnt):
     m = cv2.moments(cnt)
     cx = int(m['m10'] / m['m00'])
     cy = int(m['m01'] / m['m00'])
     return cx, cy
 
+
 def distance(x1, y1, x2, y2):
     return math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
+
 
 class Tracker:
     def __init__(self, idx=0, thresh_mask=100, thresh_detect=35):
@@ -56,7 +59,6 @@ class Tracker:
             _, mask = cv2.threshold(foi, self.thresh_mask, 255, cv2.THRESH_BINARY)
             self.mask_frame = cv2.morphologyEx(mask, cv2.MORPH_OPEN, KERNEL_3)
             self.have_mask = True
-
 
         masked = cv2.bitwise_not(foi) * (self.mask_frame // 255)
         masked = cv2.morphologyEx(masked, cv2.MORPH_OPEN, KERNEL_3)
@@ -131,11 +133,8 @@ class Tracker:
                 else:
                     cv2.line(img, (x1, y1), (x2, y2), color=(255, 255, 255))
 
-
-
         self.n_frames += 1
         if node_updated:
             return self.last_node
         else:
             return None
-

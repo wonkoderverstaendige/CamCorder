@@ -1,12 +1,12 @@
+import cv2
+import time
 import logging
 import threading
-import time
-from pathlib import Path
 from queue import Empty
-
-import cv2
+from pathlib import Path
 
 from camcorder.util.defaults import *
+
 
 class Writer(threading.Thread):
     def __init__(self, in_queue, ev_alive, ev_recording, idx=0):
