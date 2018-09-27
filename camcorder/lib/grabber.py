@@ -56,7 +56,8 @@ class Grabber(threading.Thread):
             rt, frame = self.capture.read()
             if not rt:
                 continue
-            self.frame = Frame(self.n_frames, frame, 'Grabber', add_timestamp=True, add_tickstamp=True)
+            self.frame = Frame(self.n_frames, frame, 'Grabber', add_timestamp=FRAME_ADD_TIMESTAMP,
+                               add_tickstamp=FRAME_ADD_TICKSTAMP)
 
             elapsed = (cv2.getTickCount() - t0) / cv2.getTickFrequency() * 1000
             t0 = cv2.getTickCount()
@@ -71,8 +72,9 @@ class Grabber(threading.Thread):
             # Send frames to attached threads/processes
             self.relay_frames()
 
-            if isinstance(self.source, str):
-                time.sleep(1/self.capture.get(cv2.CAP_PROP_FPS))
+            # Slow down "replay" if the image source is a video file to emulate realtime replay
+            if isinstance(self.source, str) and SLOW_ON_VIDEO_FILE:
+                time.sleep(1 / self.capture.get(cv2.CAP_PROP_FPS))
             self.n_frames += 1
 
         logging.debug('Stopping loop in {}!'.format(self.name))

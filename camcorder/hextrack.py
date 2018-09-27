@@ -14,10 +14,8 @@ from camcorder.lib.grabber import Grabber
 from camcorder.lib.writer import Writer
 from camcorder.lib.tracker import Tracker
 
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - (%(threadName)-9s) %(message)s', )
-
 # shared buffer for transferring frames between threads/processes
-shared_arr = None
+SHARED_ARR = None
 
 
 class HexTrack:
@@ -43,16 +41,16 @@ class HexTrack:
         self.paused_frame = np.zeros_like(self.frame)
 
         # Frame queues for video file output
-        self.queues = [Queue(maxsize=16) for n in range(len(sources))]
+        self.queues = [Queue(maxsize=16) for _ in range(len(sources))]
 
         # Frame acquisition objects
 
         self.grabbers = [Grabber(source=self.sources[n], arr=self._shared_arr, out_queue=self.queues[n],
-                               trigger_event=self.ev_stop, idx=n) for n in range(len(sources))]
+                                 trigger_event=self.ev_stop, idx=n) for n in range(len(sources))]
 
         # Video storage writers
-        self.writers = [Writer(in_queue=self.queues[n], ev_alive=self.ev_stop, ev_recording=self.ev_recording, idx=n) for n in range(len(sources))]
-
+        self.writers = [Writer(in_queue=self.queues[n], ev_alive=self.ev_stop, ev_recording=self.ev_recording, idx=n)
+                        for n in range(len(sources))]
 
         # Online tracker
         self.trackers = [Tracker(idx=n) for n in range(len(sources))]
@@ -67,15 +65,22 @@ class HexTrack:
         self.paused = False
 
     def run(self):
+        res = None
         while all([grabber.is_alive() for grabber in self.grabbers]):
 
             if self.paused:
                 frame = self.paused_frame
             else:
-                frame = self.frame
+                # Using copy prevents the image buffer to be overwritten by a new incoming frame
+                # Question is, what is worse. Waiting with a lock until drawing is complete,
+                # or the overhead of making a full frame copy.
+                # TODO: Blit the frame here into an allocated display buffer
+                frame = self.frame.copy()
+                for tracker in self.trackers:
+                    res = tracker.track(frame)
 
+            cv2.imshow('res', res)
             cv2.imshow('frame', frame)
-
             # What annoys a noisy oyster? Denoising noise annoys the noisy oyster!
             # This is for demonstrating a slow processing step not hindering the acquisition/writing threads
             if self.denoising:
@@ -116,19 +121,27 @@ class HexTrack:
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument('-s', '--sources', nargs='*', help='List of sources to read from', default=FRAME_SOURCES)
+    parser.add_argument('-d', '--debug', action='store_true', help='Debug mode')
+
+    cli_args = parser.parse_args()
+
+    if cli_args.debug:
+        logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - (%(threadName)-9s) %(message)s', )
+    else:
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s - (%(threadName)-9s) %(message)s', )
 
     # Construct the shared array to fit all frames
-    sources = FRAME_SOURCES
     width = FRAME_WIDTH
     height = FRAME_HEIGHT
     colors = FRAME_COLORS
     fps = FRAME_FPS
-    num_bytes = width * height * colors * len(sources)
+    num_bytes = width * height * colors * len(cli_args.sources)
 
-    shared_arr = mp.Array(ctypes.c_ubyte, num_bytes)
-    logging.debug('Created shared array: {}'.format(shared_arr))
+    SHARED_ARR = mp.Array(ctypes.c_ubyte, num_bytes)
+    logging.debug('Created shared array: {}'.format(SHARED_ARR))
 
     mp.freeze_support()
 
-    ht = HexTrack(sources=sources, shared_arr=shared_arr, frame_shape=(width, height, colors))
+    ht = HexTrack(sources=cli_args.sources, shared_arr=SHARED_ARR, frame_shape=(width, height, colors))
     ht.run()
