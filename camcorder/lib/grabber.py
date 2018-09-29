@@ -76,8 +76,8 @@ class Grabber(threading.Thread):
             self.relay_frames()
 
             # Slow down "replay" if the image source is a video file to emulate realtime replay
-            if isinstance(self.source, str) and SLOW_ON_VIDEO_FILE:
-                time.sleep(1 / self.capture.get(cv2.CAP_PROP_FPS))
+            if isinstance(self.source, str):
+                time.sleep(1 / self.capture.get(cv2.CAP_PROP_FPS) / PLAYBACK_SPEEDUP)
             self.n_frames += 1
 
         logging.debug('Stopping loop in {}!'.format(self.name))

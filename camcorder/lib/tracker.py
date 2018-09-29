@@ -19,6 +19,7 @@ DRAW_TRAIL = True
 KERNEL_3 = np.ones((3, 3), np.uint8)
 
 nodes = [NODES_A, NODES_B]
+leds = [LED_A, LED_B]
 
 
 def centroid(cnt):
@@ -33,12 +34,13 @@ def distance(x1, y1, x2, y2):
 
 
 class Tracker:
-    def __init__(self, idx=0, thresh_mask=100, thresh_detect=35):
+    def __init__(self, idx=0, thresh_mask=100, thresh_detect=35, thresh_led=70):
         super().__init__()
         self.id = idx
         self.n_frames = 0
         self.thresh_mask = thresh_mask
         self.thresh_detect = 255 - thresh_detect
+        self.thresh_led = thresh_led
 
         self.mask_frame = np.zeros((600, 800), np.uint8)
         self.have_mask = False
@@ -46,6 +48,9 @@ class Tracker:
         self.nodes = nodes[self.id]
         self.results = []
         self.last_node = None
+
+        self.led_pos = leds[self.id]
+        self.led_state = False
 
     def track(self, frame):
         node_updated = False
@@ -111,7 +116,7 @@ class Tracker:
             if self.last_node != closest_node:
                 self.last_node = closest_node
                 node_updated = True
-                print('Tracker {}: {} {}'.format(self.id, '    ' * self.id, self.last_node))
+                logging.info('Tracker {}: {} {}'.format(self.id, '    ' * self.id, self.last_node))
 
         # Label nodes
         for node_id, node in self.nodes.items():
@@ -133,8 +138,11 @@ class Tracker:
                 else:
                     cv2.line(img, (x1, y1), (x2, y2), color=(255, 255, 255))
 
+        # Detect LED state
+        self.led_state = foi[self.led_pos[1], self.led_pos[0]] > self.thresh_led
+
         self.n_frames += 1
         if node_updated:
-            return self.last_node
+            return self.led_state, self.last_node
         else:
-            return None
+            return self.led_state, None

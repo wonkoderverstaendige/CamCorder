@@ -17,7 +17,7 @@ VIDEO_CODEC = 'MP42'
 
 FONT = cv2.FONT_HERSHEY_PLAIN
 
-SLOW_ON_VIDEO_FILE = True
+PLAYBACK_SPEEDUP = 1
 
 ALLOW_DUMMY_PROCESSING = False
 
@@ -35,15 +35,15 @@ NODES_A = {1: {'use': None, 'x': 84, 'y': 75},
            12: {'use': None, 'x': 162, 'y': 491},
            13: {'use': None, 'x': 463, 'y': 519},
            14: {'use': None, 'x': 762, 'y': 549},
-           #15: {'use': None, 'x': 314, 'y': 573},
-           #16: {'use': None, 'x': 625, 'y': 592}
+           15: {'use': None, 'x': 314, 'y': 573},
+           16: {'use': None, 'x': 625, 'y': 592}
            }
 
 NODES_B = {
-           #6: {'use': None, 'x': 186, 'y': 11},
-           #7: {'use': None, 'x': 448, 'y': 15},
-           #8: {'use': None, 'x': 718, 'y': 25},
-           9: {'use': None, 'x': 319, 'y': 672},
+           6: {'use': None, 'x': 186, 'y': 11},
+           7: {'use': None, 'x': 448, 'y': 15},
+           8: {'use': None, 'x': 718, 'y': 25},
+           9: {'use': None, 'x': 319, 'y': 72},
            10: {'use': None, 'x': 591, 'y': 93},
            12: {'use': None, 'x': 306, 'y': 224},
            13: {'use': None, 'x': 589, 'y': 243},
@@ -57,3 +57,7 @@ NODES_B = {
            22: {'use': None, 'x': 435, 'y': 482},
            23: {'use': None, 'x': 580, 'y': 581},
            24: {'use': None, 'x': 730, 'y': 500}}
+
+LED_A = (376, 445)
+
+LED_B = (539, 116)

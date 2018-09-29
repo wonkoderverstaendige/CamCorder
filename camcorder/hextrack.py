@@ -57,9 +57,9 @@ class HexTrack:
         # Online tracker
         self.trackers = [Tracker(idx=n) for n in range(len(sources))]
 
-        # Scrolling frame on side
-        self.node_frame = np.zeros((FRAME_HEIGHT, 200), dtype=np.uint8)
-        self.node_frame[:5] = 255
+        # Allocate scrolling frame with node visits
+        self.node_frame = np.zeros((FRAME_HEIGHT * 2, 200, 3), dtype=np.uint8)
+        self.node_frame[:5] = (255, 255, 255)
 
         # Start up threads/processes
         for n in range(len(sources)):
@@ -79,18 +79,29 @@ class HexTrack:
                 frame = self.paused_frame
             else:
                 # Using copy prevents the image buffer to be overwritten by a new incoming frame
-                # Question is, what is worse. Waiting with a lock until drawing is complete,
+                # Question is, what is worse - waiting with a lock until drawing is complete,
                 # or the overhead of making a full frame copy.
                 # TODO: Blit the frame here into an allocated display buffer
                 frame = self.frame.copy()
-                self.node_frame[2:] = self.node_frame[:-2]
-                self.node_frame[:2] = 0
-                node_updates = [tracker.track(frame) for tracker in self.trackers]
-                for n, res in enumerate(node_updates):
-                    if res is not None:
-                        cv2.putText(self.node_frame, str(res), (50 + n*100, 30), FONT, 1., (255, 255, 255)) 
+                delta = 1
+                self.node_frame[delta:] = self.node_frame[:-delta]
+                self.node_frame[:delta] = 0
+                updates = [tracker.track(frame) for tracker in self.trackers]
+                for n, update in enumerate(updates):
+                    led_state, node_update = update
 
-            self.add_overlay(frame, (cv2.getTickCount() - self.t_phase) / cv2.getTickFrequency())
+                    # Draw colored bands for detected LEDs
+                    if led_state:
+                        col = [25, 25, 25]
+                        col[n + 1] = 127
+                        self.node_frame[:delta, :20] = self.node_frame[:delta, :20] + col
+
+                    if node_update is not None:
+                        # Put most recent node visit into the scrolling node frame
+                        cv2.putText(self.node_frame, '{: >2d}'.format(node_update), (50 + n * 80, 20), FONT, 2.,
+                                    (255, 255, 255))
+
+                self.add_overlay(frame, (cv2.getTickCount() - self.t_phase) / cv2.getTickFrequency())
 
             cv2.imshow('HexTrack', frame)
             cv2.imshow('Node visits', self.node_frame)
@@ -137,6 +148,7 @@ class HexTrack:
                 self.denoising = not self.denoising
 
     def add_overlay(self, frame, t):
+        """Overlay of time passed in normal/recording mode with recording indicator"""
         t_str = fmt_time(t)
         ox, oy = 4, 4
         # osx = 15
