@@ -17,7 +17,6 @@ from camcorder.lib.tracker import Tracker
 # shared buffer for transferring frames between threads/processes
 SHARED_ARR = None
 
-
 class HexTrack:
     def __init__(self, sources, shared_arr, frame_shape):
         threading.current_thread().name = 'HexTrack'
@@ -58,8 +57,8 @@ class HexTrack:
         self.trackers = [Tracker(idx=n) for n in range(len(sources))]
 
         # Allocate scrolling frame with node visits
-        self.node_frame = np.zeros((FRAME_HEIGHT * 2, 200, 3), dtype=np.uint8)
-        self.node_frame[:5] = (255, 255, 255)
+        self.disp_frame = np.zeros((FRAME_HEIGHT * 2, FRAME_WIDTH + NODE_FRAME_WIDTH, 3), dtype=np.uint8)
+        self.disp_frame[:1] = NODE_FRAME_FG_INACTIVE
 
         # Start up threads/processes
         for n in range(len(sources)):
@@ -67,13 +66,13 @@ class HexTrack:
             self.writers[n].start()
 
         cv2.namedWindow('HexTrack', cv2.WINDOW_AUTOSIZE)
-        cv2.namedWindow('Node visits', cv2.WINDOW_AUTOSIZE)
 
         logging.debug('HexTrack initialization done!')
 
         self.paused = False
+        self.trial_active = False
 
-    def run(self):
+    def loop(self):
         while all([grabber.is_alive() for grabber in self.grabbers]):
             if self.paused:
                 frame = self.paused_frame
@@ -84,9 +83,18 @@ class HexTrack:
                 # TODO: Blit the frame here into an allocated display buffer
                 frame = self.frame.copy()
                 delta = 1
-                self.node_frame[delta:] = self.node_frame[:-delta]
-                self.node_frame[:delta] = 0
+
                 updates = [tracker.track(frame) for tracker in self.trackers]
+
+                self.disp_frame[:, :FRAME_WIDTH] = frame
+
+                fg_col = NODE_FRAME_FG_ACTIVE if self.trial_active else NODE_FRAME_FG_INACTIVE
+                bg_col = NODE_FRAME_BG_ACTIVE if self.trial_active else NODE_FRAME_BG_INACTIVE
+
+                self.disp_frame[delta:, FRAME_WIDTH:] = self.disp_frame[:-delta, FRAME_WIDTH:]
+                self.disp_frame[:delta, FRAME_WIDTH:] = bg_col
+
+                self.disp_frame[:delta, FRAME_WIDTH + NODE_FRAME_WIDTH - SYNC_FRAME_WIDTH:] = NODE_FRAME_BG_INACTIVE
                 for n, update in enumerate(updates):
                     led_state, node_update = update
 
@@ -94,17 +102,17 @@ class HexTrack:
                     if led_state:
                         col = [25, 25, 25]
                         col[n + 1] = 127
-                        self.node_frame[:delta, :20] = self.node_frame[:delta, :20] + col
+                        self.disp_frame[:delta, FRAME_WIDTH + NODE_FRAME_WIDTH - SYNC_FRAME_WIDTH:] = \
+                            self.disp_frame[:delta, FRAME_WIDTH + NODE_FRAME_WIDTH - SYNC_FRAME_WIDTH:] + col
 
                     if node_update is not None:
                         # Put most recent node visit into the scrolling node frame
-                        cv2.putText(self.node_frame, '{: >2d}'.format(node_update), (50 + n * 80, 20), FONT, 2.,
-                                    (255, 255, 255))
+                        cv2.putText(self.disp_frame, '{: >2d}'.format(node_update), (FRAME_WIDTH + (5 + n * 50), 20),
+                                    FONT, 2., NODE_FRAME_FG_ACTIVE if self.trial_active else NODE_FRAME_FG_INACTIVE)
 
-                self.add_overlay(frame, (cv2.getTickCount() - self.t_phase) / cv2.getTickFrequency())
+                self.add_overlay(self.disp_frame, (cv2.getTickCount() - self.t_phase) / cv2.getTickFrequency())
 
-            cv2.imshow('HexTrack', frame)
-            cv2.imshow('Node visits', self.node_frame)
+            cv2.imshow('HexTrack', self.disp_frame)
 
             # What annoys a noisy oyster? Denoising noise annoys the noisy oyster!
             # This is for demonstrating a slow processing step not hindering the acquisition/writing threads
@@ -146,6 +154,11 @@ class HexTrack:
 
             elif key == ord('d'):
                 self.denoising = not self.denoising
+
+            elif key == ord('t'):
+                self.trial_active = not self.trial_active
+                logging.info('Trial {}'.format('active') if self.trial_active else 'inactive')
+
 
     def add_overlay(self, frame, t):
         """Overlay of time passed in normal/recording mode with recording indicator"""
@@ -199,4 +212,4 @@ if __name__ == '__main__':
     mp.freeze_support()
 
     ht = HexTrack(sources=cli_args.sources, shared_arr=SHARED_ARR, frame_shape=(width, height, colors))
-    ht.run()
+    ht.loop()
