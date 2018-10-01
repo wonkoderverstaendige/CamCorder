@@ -3,8 +3,8 @@ import sys
 import cv2
 
 from PyQt5.QtCore import QThread, pyqtSignal, pyqtSlot, Qt
-from PyQt5.QtWidgets import QWidget, QApplication, QLabel
-from PyQt5.QtGui import QPixmap, QImage
+from PyQt5.QtWidgets import QMainWindow, QWidget, QApplication, QLabel
+from PyQt5.QtGui import QPixmap, QImage, QKeyEvent
 
 class Thread(QThread):
     changePixmap = pyqtSignal(QImage)
@@ -24,7 +24,7 @@ class Thread(QThread):
                 self.changePixmap.emit(p)
 
 
-class App(QWidget):
+class App(QMainWindow):
     def __init__(self):
         super().__init__()
         self.title = 'PyQt5 Video'
@@ -52,6 +52,15 @@ class App(QWidget):
         th = Thread(self)
         th.changePixmap.connect(self.setImage)
         th.start()
+
+    def keyPressEvent(self, event: QKeyEvent):
+        if event.key() in [Qt.Key_Escape, Qt.Key_Q]:
+            self.close()
+            # Don't let the app hang!
+            QApplication.quit()
+
+        if event.key() == Qt.Key_Space:
+            print('Pause')
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
