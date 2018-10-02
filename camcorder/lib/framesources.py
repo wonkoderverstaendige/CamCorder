@@ -32,7 +32,7 @@ class Frame:
         self.tickstamp = tickstamp if tickstamp is not None else \
             int((1000 * cv2.getTickCount()) / cv2.getTickFrequency())
 
-        time_text = time.strftime("%d-%b-%y %H:%M:%S", time.localtime(self.timestamp))
+        time_text = time.strftime("%Y-%m-%d_%H:%M:%S", time.localtime(self.timestamp))
         ms = "{0:03d}".format(int((self.timestamp - int(self.timestamp)) * 1000))
         self.time_text = ".".join([time_text, ms])
 

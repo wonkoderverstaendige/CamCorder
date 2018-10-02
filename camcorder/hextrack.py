@@ -25,6 +25,7 @@ class HexTrack:
         self.ev_stop = threading.Event()
         self.ev_recording = threading.Event()
         self.ev_tracking = threading.Event()
+        self.ev_trial_active = threading.Event()
         self.t_phase = cv2.getTickCount()
 
         # List of video sources
@@ -50,8 +51,8 @@ class HexTrack:
                                  trigger_event=self.ev_stop, idx=n) for n in range(len(sources))]
 
         # Video storage writers
-        self.writers = [Writer(in_queue=self.queues[n], ev_alive=self.ev_stop, ev_recording=self.ev_recording, idx=n)
-                        for n in range(len(sources))]
+        self.writers = [Writer(in_queue=self.queues[n], ev_alive=self.ev_stop, ev_recording=self.ev_recording,
+                               ev_trial_active=self.ev_trial_active, idx=n) for n in range(len(sources))]
 
         # Online tracker
         self.trackers = [Tracker(idx=n) for n in range(len(sources))]
@@ -70,7 +71,6 @@ class HexTrack:
         logging.debug('HexTrack initialization done!')
 
         self.paused = False
-        self.trial_active = False
 
     def loop(self):
         while all([grabber.is_alive() for grabber in self.grabbers]):
@@ -88,8 +88,9 @@ class HexTrack:
 
                 self.disp_frame[:, :FRAME_WIDTH] = frame
 
-                fg_col = NODE_FRAME_FG_ACTIVE if self.trial_active else NODE_FRAME_FG_INACTIVE
-                bg_col = NODE_FRAME_BG_ACTIVE if self.trial_active else NODE_FRAME_BG_INACTIVE
+                trial_active = self.ev_trial_active.is_set()
+                fg_col = NODE_FRAME_FG_ACTIVE if trial_active else NODE_FRAME_FG_INACTIVE
+                bg_col = NODE_FRAME_BG_ACTIVE if trial_active else NODE_FRAME_BG_INACTIVE
 
                 self.disp_frame[delta:, FRAME_WIDTH:] = self.disp_frame[:-delta, FRAME_WIDTH:]
                 self.disp_frame[:delta, FRAME_WIDTH:] = bg_col
@@ -108,7 +109,7 @@ class HexTrack:
                     if node_update is not None:
                         # Put most recent node visit into the scrolling node frame
                         cv2.putText(self.disp_frame, '{: >2d}'.format(node_update), (FRAME_WIDTH + (5 + n * 50), 20),
-                                    FONT, 2., NODE_FRAME_FG_ACTIVE if self.trial_active else NODE_FRAME_FG_INACTIVE)
+                                    FONT, 2., fg_col)
 
                 self.add_overlay(self.disp_frame, (cv2.getTickCount() - self.t_phase) / cv2.getTickFrequency())
 
@@ -156,9 +157,11 @@ class HexTrack:
                 self.denoising = not self.denoising
 
             elif key == ord('t'):
-                self.trial_active = not self.trial_active
-                logging.info('Trial {}'.format('active') if self.trial_active else 'inactive')
-
+                if not self.ev_trial_active.is_set():
+                    self.ev_trial_active.set()
+                else:
+                    self.ev_trial_active.clear()
+                logging.info('Trial {}'.format('active') if self.ev_trial_active.is_set() else 'inactive')
 
     def add_overlay(self, frame, t):
         """Overlay of time passed in normal/recording mode with recording indicator"""

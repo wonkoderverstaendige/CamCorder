@@ -2,6 +2,7 @@ import cv2
 import math
 import numpy as np
 import logging
+from collections import deque
 
 from camcorder.util.defaults import *
 
@@ -13,7 +14,7 @@ THICKNESS_MAJOR_CONTOUR = 1
 DRAW_MINOR_CONTOURS = False
 DRAW_MAJOR_CONTOURS = True
 
-TRAIL_LENGTH = 30
+TRAIL_LENGTH = 100
 DRAW_TRAIL = True
 
 KERNEL_3 = np.ones((3, 3), np.uint8)
@@ -46,7 +47,7 @@ class Tracker:
         self.have_mask = False
 
         self.nodes = nodes[self.id]
-        self.results = []
+        self.results = deque(maxlen=TRAIL_LENGTH)
         self.last_node = None
 
         self.led_pos = leds[self.id]
@@ -90,10 +91,12 @@ class Tracker:
         closest_node = None
         closest_distance = 1e12
 
-        if largest_cnt is not None:
+        if largest_cnt is None:
+            self.results.appendleft(None)
+        else:
             # center coordinates of contour
             cx, cy = centroid(largest_cnt)
-            self.results.append((cx, cy))
+            self.results.appendleft((cx, cy))
 
             # draw largest contour and contour label
             if DRAW_MAJOR_CONTOURS:
@@ -127,13 +130,13 @@ class Tracker:
             #         x=node['x'] - self.x, y=node['y'] - self.y, f_scale=2.)
 
         # Draw the trail
-        points = self.results[-30:]
+        points = self.results
         if DRAW_TRAIL and len(points) > 1:
             for p_idx in range(len(points) - 1):
                 try:
                     x1, y1 = map(int, points[p_idx])
                     x2, y2 = map(int, points[p_idx + 1])
-                except ValueError:
+                except (ValueError, TypeError):
                     pass
                 else:
                     cv2.line(img, (x1, y1), (x2, y2), color=(255, 255, 255))
