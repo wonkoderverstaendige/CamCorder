@@ -5,6 +5,7 @@ import logging
 from collections import deque
 
 from camcorder.util.defaults import *
+from camcorder.lib.kalman import KalmanFilter
 
 MIN_MOUSE_AREA = 50
 MIN_DIST_TO_NODE = 100
@@ -14,7 +15,7 @@ THICKNESS_MAJOR_CONTOUR = 1
 DRAW_MINOR_CONTOURS = False
 DRAW_MAJOR_CONTOURS = True
 
-TRAIL_LENGTH = 100
+TRAIL_LENGTH = 512
 DRAW_TRAIL = True
 
 KERNEL_3 = np.ones((3, 3), np.uint8)
@@ -52,6 +53,9 @@ class Tracker:
 
         self.led_pos = leds[self.id]
         self.led_state = False
+
+        self.kf = KalmanFilter()
+        self.kf_results = deque(maxlen=TRAIL_LENGTH)
 
     def track(self, frame):
         node_updated = False
@@ -97,6 +101,7 @@ class Tracker:
             # center coordinates of contour
             cx, cy = centroid(largest_cnt)
             self.results.appendleft((cx, cy))
+            self.kf.estimate(cx, cy)
 
             # draw largest contour and contour label
             if DRAW_MAJOR_CONTOURS:
@@ -106,7 +111,7 @@ class Tracker:
                 #         x=(min(cx + 15, 700)),
                 #         y=cy + 15)
 
-            cv2.drawMarker(img=img, position=centroid(largest_cnt), color=(0, 255, 0))
+            cv2.drawMarker(img=img, position=(cx, cy), color=(0, 255, 0))
             # cv2.circle(self.frame['raw'], (cx, cy), 3, color=(255, 255, 255))
 
             # Find closest node
@@ -129,7 +134,7 @@ class Tracker:
             # overlay(self.frame['raw'], text=str(node_id), color=color,
             #         x=node['x'] - self.x, y=node['y'] - self.y, f_scale=2.)
 
-        # Draw the trail
+        # Draw the detection trail
         points = self.results
         if DRAW_TRAIL and len(points) > 1:
             for p_idx in range(len(points) - 1):
@@ -139,7 +144,27 @@ class Tracker:
                 except (ValueError, TypeError):
                     pass
                 else:
-                    cv2.line(img, (x1, y1), (x2, y2), color=(255, 255, 255))
+                    cv2.line(img, (x1, y1), (x2, y2), color=(0, 255, 0), thickness=2)
+
+        # Kalman filter of position
+        kf_res = self.kf.predict()
+        kfx, kfy = int(kf_res[0]), int(kf_res[1])
+        self.kf_results.appendleft((kfx, kfy))
+
+        cv2.drawMarker(img, position=(kfx, kfy), color=(0, 0, 255))
+
+        # Draw the kalman filter predictions trail
+        points = self.kf_results
+        if DRAW_TRAIL and len(points) > 1:
+            for p_idx in range(len(points) - 1):
+                try:
+                    x1, y1 = map(int, points[p_idx])
+                    x2, y2 = map(int, points[p_idx + 1])
+                except (ValueError, TypeError):
+                    pass
+                else:
+                    cv2.line(img, (x1, y1), (x2, y2), color=(50, 50, 255), thickness=1)
+
 
         # Detect LED state
         self.led_state = foi[self.led_pos[1], self.led_pos[0]] > self.thresh_led
