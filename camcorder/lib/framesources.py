@@ -60,10 +60,10 @@ class Frame:
         return self.img.shape
 
     def add_overlay(self, text):
-        text_overlay(self.img, text, 3, 3, f_scale=1.)
-        # cv2.putText(img=self.img, text=text,
-        #             org=(3, 12), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=0.8,
-        #             color=(255, 255, 255), thickness=1, lineType=cv2.LINE_AA)
+        # text_overlay(self.img, text, 3, self.img.shape[0], f_scale=1.)
+        cv2.putText(img=self.img, text=text,
+                    org=(3, self.height + 2), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=0.8,
+                    color=(255, 255, 255), thickness=1, lineType=cv2.LINE_AA)
 
 
 class FrameSource(object):

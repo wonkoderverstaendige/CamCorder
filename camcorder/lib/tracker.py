@@ -44,7 +44,7 @@ class Tracker:
         self.thresh_detect = 255 - thresh_detect
         self.thresh_led = thresh_led
 
-        self.mask_frame = np.zeros((600, 800), np.uint8)
+        self.mask_frame = np.zeros((FRAME_HEIGHT, FRAME_WIDTH), np.uint8)
         self.have_mask = False
 
         self.nodes = nodes[self.id]
@@ -57,10 +57,23 @@ class Tracker:
         self.kf = KalmanFilter()
         self.kf_results = deque(maxlen=TRAIL_LENGTH)
 
+        self._t_track = deque(maxlen=100)
+
     def track(self, frame):
+        t0 = cv2.getTickCount()
         node_updated = False
-        img = frame[self.id * 600:(self.id + 1) * 600, :]
+        h_start = self.id * (FRAME_HEIGHT + FRAME_METADATA)
+        h_end = self.id * (FRAME_HEIGHT + FRAME_METADATA) + FRAME_HEIGHT
+        img = frame[h_start:h_end, :]
+
+        metadata = frame[h_end:h_end + FRAME_METADATA, -22:]
+        tickstamp = metadata[0, 0:3].reshape(-1)[1:].view(np.uint64)
+        index = metadata[0, 3:6].reshape(-1)[1:].view(np.uint64)
+        print(index, tickstamp)
+
+        # cv2.rectangle(img, (0, 0), (FRAME_WIDTH, FRAME_HEIGHT), color=(255, 0, 0), thickness=3)
         foi = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        ofs = FRAME_METADATA
 
         # It takes time to fire up the cameras, so first frames might be zeros.
         # Check until we have a mask
@@ -101,7 +114,7 @@ class Tracker:
             # center coordinates of contour
             cx, cy = centroid(largest_cnt)
             self.results.appendleft((cx, cy))
-            self.kf.estimate(cx, cy)
+            self.kf.correct(cx, cy)
 
             # draw largest contour and contour label
             if DRAW_MAJOR_CONTOURS:
@@ -170,6 +183,11 @@ class Tracker:
         self.led_state = foi[self.led_pos[1], self.led_pos[0]] > self.thresh_led
 
         self.n_frames += 1
+
+        elapsed = (cv2.getTickCount() - t0) / cv2.getTickFrequency() * 1000
+        self._t_track.appendleft(elapsed)
+        # print(sum(self._t_track) / len(self._t_track), max(self._t_track))
+
         if node_updated:
             return self.led_state, self.last_node
         else:

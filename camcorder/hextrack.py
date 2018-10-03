@@ -5,6 +5,7 @@ import logging
 import threading
 from queue import Queue
 import multiprocessing as mp
+from collections import deque
 
 import numpy as np
 
@@ -28,6 +29,8 @@ class HexTrack:
         self.ev_trial_active = threading.Event()
         self.t_phase = cv2.getTickCount()
 
+        self._loop_times = deque(maxlen=30)
+
         # List of video sources
         self.sources = sources
 
@@ -36,11 +39,16 @@ class HexTrack:
 
         w, h, c = frame_shape
 
+        # Shared array population
         with shared_arr.get_lock():
             self._shared_arr = shared_arr
             logging.debug('Grabber shared array: {}'.format(self._shared_arr))
             self.frame = buf_to_numpy(self._shared_arr, shape=(h * len(sources), w, c))
         self.paused_frame = np.zeros_like(self.frame)
+
+        # Allocate scrolling frame with node visits
+        self.disp_frame = np.zeros((h * len(sources), w + NODE_FRAME_WIDTH, 3), dtype=np.uint8)
+        self.disp_frame[:1] = NODE_FRAME_FG_INACTIVE
 
         # Frame queues for video file output
         self.queues = [Queue(maxsize=16) for _ in range(len(sources))]
@@ -57,10 +65,6 @@ class HexTrack:
         # Online tracker
         self.trackers = [Tracker(idx=n) for n in range(len(sources))]
 
-        # Allocate scrolling frame with node visits
-        self.disp_frame = np.zeros((FRAME_HEIGHT * 2, FRAME_WIDTH + NODE_FRAME_WIDTH, 3), dtype=np.uint8)
-        self.disp_frame[:1] = NODE_FRAME_FG_INACTIVE
-
         # Start up threads/processes
         for n in range(len(sources)):
             self.grabbers[n].start()
@@ -73,6 +77,8 @@ class HexTrack:
         self.paused = False
 
     def loop(self):
+        frame_idx = 0
+        t0 = cv2.getTickCount()
         while all([grabber.is_alive() for grabber in self.grabbers]):
             if self.paused:
                 frame = self.paused_frame
@@ -82,7 +88,8 @@ class HexTrack:
                 # or the overhead of making a full frame copy.
                 # TODO: Blit the frame here into an allocated display buffer
                 frame = self.frame.copy()
-                delta = 1
+                frame_idx += 1
+                delta = 2
 
                 updates = [tracker.track(frame) for tracker in self.trackers]
 
@@ -111,6 +118,7 @@ class HexTrack:
                         cv2.putText(self.disp_frame, '{: >2d}'.format(node_update), (FRAME_WIDTH + (5 + n * 50), 20),
                                     FONT, 2., fg_col)
 
+                # Timestamp overlay
                 self.add_overlay(self.disp_frame, (cv2.getTickCount() - self.t_phase) / cv2.getTickFrequency())
 
             cv2.imshow('HexTrack', self.disp_frame)
@@ -124,7 +132,9 @@ class HexTrack:
                 cv2.imshow('denoised', dn)
 
             # Event loop call
-            key = cv2.waitKey(1)
+            key = cv2.waitKey(25)
+
+            # Process Keypress Events
             if key == ord('q'):
                 self.ev_stop.set()
                 logging.debug('Join request sent!')
@@ -142,6 +152,7 @@ class HexTrack:
                 break
 
             elif key == ord('r'):
+                # Start or stop recording
                 self.t_phase = cv2.getTickCount()
                 if not self.ev_recording.is_set():
                     self.ev_recording.set()
@@ -149,19 +160,31 @@ class HexTrack:
                     self.ev_recording.clear()
 
             elif key == ord(' '):
+                # Pause display (not acquisition!)
                 self.paused = not self.paused
                 if self.paused:
                     self.paused_frame = self.frame.copy()
 
             elif key == ord('d'):
+                # Enable dummy processing to slow down main loop
+                # demonstrates the backend continuously grabbing and
+                # writing frames even of display/tracking is slow
                 self.denoising = not self.denoising
 
             elif key == ord('t'):
+                # Start/stop a trial period
                 if not self.ev_trial_active.is_set():
                     self.ev_trial_active.set()
                 else:
                     self.ev_trial_active.clear()
                 logging.info('Trial {}'.format('active') if self.ev_trial_active.is_set() else 'inactive')
+
+            elapsed = ((cv2.getTickCount() - t0) / cv2.getTickFrequency()) * 1000
+            self._loop_times.appendleft(elapsed)
+            t0 = cv2.getTickCount()
+
+            if not (frame_idx % 100):
+                logging.debug('Display/tracking at {:.1f} fps'.format(1000 / (sum(self._loop_times) / len(self._loop_times))))
 
     def add_overlay(self, frame, t):
         """Overlay of time passed in normal/recording mode with recording indicator"""
@@ -204,13 +227,16 @@ if __name__ == '__main__':
 
     # Construct the shared array to fit all frames
     width = FRAME_WIDTH
-    height = FRAME_HEIGHT
+    height = FRAME_HEIGHT + FRAME_METADATA
     colors = FRAME_COLORS
     fps = FRAME_FPS
-    num_bytes = width * height * colors * len(cli_args.sources)
+    n_views = len(cli_args.sources)
+    num_bytes = width * height * colors * n_views
 
     SHARED_ARR = mp.Array(ctypes.c_ubyte, num_bytes)
+
     logging.debug('Created shared array: {}'.format(SHARED_ARR))
+    logging.debug('Intended shared array shape {}x{}x{}'.format(width, height*n_views, colors))
 
     mp.freeze_support()
 
