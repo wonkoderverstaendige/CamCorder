@@ -89,7 +89,7 @@ class HexTrack:
                 # TODO: Blit the frame here into an allocated display buffer
                 frame = self.frame.copy()
                 frame_idx += 1
-                delta = 2
+                delta = NODE_FRAME_STEP_SCROLL
 
                 updates = [tracker.track(frame) for tracker in self.trackers]
 
@@ -116,7 +116,7 @@ class HexTrack:
                     if node_update is not None:
                         # Put most recent node visit into the scrolling node frame
                         cv2.putText(self.disp_frame, '{: >2d}'.format(node_update), (FRAME_WIDTH + (5 + n * 50), 20),
-                                    FONT, 2., fg_col)
+                                    FONT, NODE_FRAME_FONT_SIZE, fg_col, thickness=NODE_FRAME_FONT_WEIGHT)
 
                 # Timestamp overlay
                 self.add_overlay(self.disp_frame, (cv2.getTickCount() - self.t_phase) / cv2.getTickFrequency())
