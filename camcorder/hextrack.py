@@ -178,13 +178,14 @@ class HexTrack:
                 # writing frames even of display/tracking is slow
                 self.denoising = not self.denoising
 
-            elif key == ord('t'):
+            elif key in [ord('t'), ord('.'), 85, 86]:
                 # Start/stop a trial period
                 if not self.ev_trial_active.is_set():
                     self.ev_trial_active.set()
                 else:
                     self.ev_trial_active.clear()
-                logging.info('Trial {}'.format('active') if self.ev_trial_active.is_set() else 'inactive')
+                logging.info(
+                    'Trial -------- {} --------'.format('active') if self.ev_trial_active.is_set() else 'inactive')
 
             elapsed = ((cv2.getTickCount() - t0) / cv2.getTickFrequency()) * 1000
             self._loop_times.appendleft(elapsed)

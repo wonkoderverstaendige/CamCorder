@@ -79,13 +79,12 @@ class Tracker:
         self.contours = None
         self.largest_contour = None
 
-
     def annotate(self):
-        if self.contours is not None and DRAW_MINOR_CONTOURS:
+        if DRAW_MINOR_CONTOURS and self.contours is not None:
             cv2.drawContours(self.img, self.contours, -1, (150, 150, 0), THICKNESS_MINOR_CONTOUR)
 
         # draw largest contour and contour label
-        if DRAW_MAJOR_CONTOURS:
+        if DRAW_MAJOR_CONTOURS and self.largest_contour is not None:
             cv2.drawContours(self.img, [self.largest_contour], 0, (0, 0, 255), THICKNESS_MAJOR_CONTOUR)
 
         # Marker on centroid of largest contour
@@ -109,8 +108,7 @@ class Tracker:
                 else:
                     cv2.line(self.img, (x1, y1), (x2, y2), color=(0, 255, 0), thickness=2)
 
-
-        # Draw the kalman filter predictions trail
+        # Draw the Kalman filter predictions trail
         cv2.drawMarker(self.img, position=self.last_kf_pos, color=(0, 0, 255))
         points = self.kf_results
         if DRAW_KF_TRAIL and len(points) > 1:
