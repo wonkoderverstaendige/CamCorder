@@ -18,6 +18,7 @@ from camcorder.lib.tracker import Tracker
 # shared buffer for transferring frames between threads/processes
 SHARED_ARR = None
 
+
 class HexTrack:
     def __init__(self, sources, shared_arr, frame_shape):
         threading.current_thread().name = 'HexTrack'
@@ -87,11 +88,15 @@ class HexTrack:
                 # Question is, what is worse - waiting with a lock until drawing is complete,
                 # or the overhead of making a full frame copy.
                 # TODO: Blit the frame here into an allocated display buffer
-                frame = self.frame.copy()
+                with self._shared_arr.get_lock():
+                    frame = self.frame.copy()
+
+                for tracker in self.trackers:
+                    tracker.apply(frame)
+                    tracker.annotate()
+
                 frame_idx += 1
                 delta = NODE_FRAME_STEP_SCROLL
-
-                updates = [tracker.track(frame) for tracker in self.trackers]
 
                 self.disp_frame[:, :FRAME_WIDTH] = frame
 
@@ -103,20 +108,22 @@ class HexTrack:
                 self.disp_frame[:delta, FRAME_WIDTH:] = bg_col
 
                 self.disp_frame[:delta, FRAME_WIDTH + NODE_FRAME_WIDTH - SYNC_FRAME_WIDTH:] = NODE_FRAME_BG_INACTIVE
-                for n, update in enumerate(updates):
-                    led_state, node_update = update
 
+                for tracker in self.trackers:
                     # Draw colored bands for detected LEDs
-                    if led_state:
+                    if tracker.led_state:
                         col = [25, 25, 25]
-                        col[n + 1] = 127
+                        col[tracker.id + 1] = 127
                         self.disp_frame[:delta, FRAME_WIDTH + NODE_FRAME_WIDTH - SYNC_FRAME_WIDTH:] = \
                             self.disp_frame[:delta, FRAME_WIDTH + NODE_FRAME_WIDTH - SYNC_FRAME_WIDTH:] + col
 
-                    if node_update is not None:
+                    if not tracker.node_updated_presented:
+                        tracker.node_updated_presented = True
                         # Put most recent node visit into the scrolling node frame
-                        cv2.putText(self.disp_frame, '{: >2d}'.format(node_update), (FRAME_WIDTH + (5 + n * 50), 20),
-                                    FONT, NODE_FRAME_FONT_SIZE, fg_col, thickness=NODE_FRAME_FONT_WEIGHT)
+                        if tracker.last_node is not None:
+                            cv2.putText(self.disp_frame, '{: >2d}'.format(tracker.last_node),
+                                        (FRAME_WIDTH + (5 + tracker.id * 50), 20),
+                                        FONT, NODE_FRAME_FONT_SIZE, fg_col, thickness=NODE_FRAME_FONT_WEIGHT)
 
                 # Timestamp overlay
                 self.add_overlay(self.disp_frame, (cv2.getTickCount() - self.t_phase) / cv2.getTickFrequency())
@@ -184,7 +191,8 @@ class HexTrack:
             t0 = cv2.getTickCount()
 
             if not (frame_idx % 100):
-                logging.debug('Display/tracking at {:.1f} fps'.format(1000 / (sum(self._loop_times) / len(self._loop_times))))
+                logging.debug(
+                    'Display/tracking at {:.1f} fps'.format(1000 / (sum(self._loop_times) / len(self._loop_times))))
 
     def add_overlay(self, frame, t):
         """Overlay of time passed in normal/recording mode with recording indicator"""
@@ -236,7 +244,7 @@ if __name__ == '__main__':
     SHARED_ARR = mp.Array(ctypes.c_ubyte, num_bytes)
 
     logging.debug('Created shared array: {}'.format(SHARED_ARR))
-    logging.debug('Intended shared array shape {}x{}x{}'.format(width, height*n_views, colors))
+    logging.debug('Intended shared array shape {}x{}x{}'.format(width, height * n_views, colors))
 
     mp.freeze_support()
 

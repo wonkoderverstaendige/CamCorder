@@ -41,7 +41,7 @@ class Grabber(threading.Thread):
         self._write_queue = out_queue
         self._trigger = trigger_event
         self._avg_fps = FRAME_FPS
-        self._t_loop = deque(maxlen=N_FRAMES_LOG_WINDOW)
+        self._t_loop = deque(maxlen=N_FRAMES_FPS_LOG)
 
         logging.debug('Grabber initialization done!')
 
@@ -75,7 +75,7 @@ class Grabber(threading.Thread):
             t0 = cv2.getTickCount()
 
             # Every now and then show fps
-            if not self.n_frames % N_FRAMES_LOG_WINDOW:
+            if not self.n_frames % N_FRAMES_FPS_LOG:
                 avg_fps = 1 / (sum(self._t_loop) / len(self._t_loop))
                 logging.debug(
                     'Grabbing frame {}... {}, avg. {:.1f} fps'.format(self.n_frames, 'OK' if rt else 'FAIL', avg_fps))
@@ -93,14 +93,17 @@ class Grabber(threading.Thread):
         # NOTE: [:] indicates to reuse the buffer
         with self._shared_arr.get_lock():
             self._fresh_frame[:-FRAME_METADATA, :] = self.frame.img
-            self._fresh_frame[-FRAME_METADATA:, -22:] = (255, 128, 0)
+            self._fresh_frame[-FRAME_METADATA:, -FRAME_METADATA_BYTE:] = 0 # (255, 128, 0)
 
             # Embed timestamp and frame index
-            tickstamp = np.zeros(9, dtype=np.uint8)
-            tickstamp[1:] = np.array([self.frame.tickstamp], dtype=np.uint64).view(np.uint8)
+            index = np.zeros(FRAME_METADATA_BYTE, dtype=np.uint8)
+            index[0] = np.array([self.id], dtype=np.uint8)
+            index[1:7] = np.fromstring('{:<6s}'.format('index'), dtype=np.uint8)
+            index[7:] = np.array([self.frame.index], dtype=np.uint64).view(np.uint8)
+            self._fresh_frame[-FRAME_METADATA:-FRAME_METADATA + 1, -FRAME_METADATA_BYTE//3:] = index.reshape(1, -1, 3)
 
-            index = np.zeros(9, dtype=np.uint8)
-            index[1:] = np.array([self.frame.index], dtype=np.uint64).view(np.uint8)
-
-            self._fresh_frame[-FRAME_METADATA:-FRAME_METADATA + 1, -22:-19] = tickstamp.reshape(1, 3, 3)
-            self._fresh_frame[-FRAME_METADATA:-FRAME_METADATA + 1, -19:-16] = index.reshape(1, 3, 3)
+            tickstamp = np.zeros(FRAME_METADATA_BYTE, dtype=np.uint8)
+            tickstamp[0] = np.array([self.id], dtype=np.uint8)
+            tickstamp[1:7] = np.fromstring('{:<6s}'.format('tickst'), dtype=np.uint8)
+            tickstamp[7:] = np.array([self.frame.tickstamp], dtype=np.uint64).view(np.uint8)
+            self._fresh_frame[-FRAME_METADATA + 1:-FRAME_METADATA + 2, -FRAME_METADATA_BYTE//3:] = tickstamp.reshape(1, -1, 3)

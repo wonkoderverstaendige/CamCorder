@@ -2,6 +2,24 @@ import cv2
 import numpy as np
 from math import ceil, sqrt
 
+from camcorder.util.defaults import *
+
+
+def extract_metadata(arr):
+    """Extract metadata from a small patch of pixels"""
+    metadata = {}
+    rows = arr.shape[0]
+    for row in range(rows):
+        try:
+            s = arr[row].reshape(-1)
+            g_id = int(s[0])
+            if np.sum(s[1:7]):
+                key = s[1:7].tostring().decode('ascii').strip()
+                metadata[key] = (g_id, s[7:].view(np.uint64))
+        except UnicodeDecodeError:
+            pass
+    return metadata
+
 
 def text_overlay(frame, text, x=3, y=3, f_scale=1., color=None, origin='left', thickness=1):
     if color is None:
