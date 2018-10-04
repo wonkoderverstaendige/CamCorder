@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 import ctypes
+import time
 import argparse
 import logging
 import threading
+from pathlib import Path
 from queue import Queue
 import multiprocessing as mp
 from collections import deque
@@ -188,8 +190,8 @@ class HexTrack:
                     self.ev_trial_active.set()
                 else:
                     self.ev_trial_active.clear()
-                logging.info(
-                    'Trial -------- {} --------'.format('active') if self.ev_trial_active.is_set() else 'inactive')
+                logging.info('Trial {}'.format(
+                    '++++++++ active ++++++++' if self.ev_trial_active.is_set() else '------- inactive -------'))
 
             elapsed = ((cv2.getTickCount() - t0) / cv2.getTickFrequency()) * 1000
             self._loop_times.appendleft(elapsed)
@@ -233,10 +235,19 @@ if __name__ == '__main__':
 
     cli_args = parser.parse_args()
 
+    logfile = Path.home() / "Videos/hextrack/{}_hextrack_log".format(
+        time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime(time.time())))
+
     if cli_args.debug:
-        logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - (%(threadName)-9s) %(message)s', )
+        logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - (%(threadName)-9s) %(message)s')
+
     else:
-        logging.basicConfig(level=logging.INFO, format='%(asctime)s - (%(threadName)-9s) %(message)s', )
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s - (%(threadName)-9s) %(message)s')
+
+    fh = logging.FileHandler(str(logfile))
+    fhf = logging.Formatter('%(asctime)s : %(levelname)s : [%(threadName)-9s] - %(message)s')
+    fh.setFormatter(fhf)
+    logging.getLogger('').addHandler(fh)
 
     # Construct the shared array to fit all frames
     width = FRAME_WIDTH

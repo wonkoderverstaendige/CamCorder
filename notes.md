@@ -19,9 +19,9 @@ On Ubuntu 18.04.1 using anaconda, opencv is not distributed with any GUI support
 
 [ ] Configuration files for node locations, cameras etc.
 
-[ ] Metadata header in shared array
+[X] Metadata header in shared array
 
-[ ] Write tracking result to file
+[X] Write tracking result to file
 
 [ ] Prediction termination of filter output on error threshold
 

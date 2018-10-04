@@ -155,7 +155,7 @@ class Tracker:
             # It takes time to fire up the cameras, so first frames might be zeros.
             # Check until we have a mask
             if not self.has_mask and np.mean(np.mean(foi)) > 15:
-                logging.info('Grabbing initial mask')
+                logging.info('Grabbing mask')
                 self.make_mask(foi, global_threshold=self.thresh_mask)
 
             masked = cv2.bitwise_not(foi) * (self.mask_frame // 255)
