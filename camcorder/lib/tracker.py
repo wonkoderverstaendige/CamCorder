@@ -20,6 +20,8 @@ TRAIL_LENGTH = 128
 DRAW_TRAIL = True
 DRAW_KF_TRAIL = True
 
+SEARCH_WINDOW_SIZE = 60
+
 KERNEL_3 = np.ones((3, 3), np.uint8)
 
 nodes = [NODES_A, NODES_B]
@@ -73,6 +75,7 @@ class Tracker:
         self.kf = KalmanFilter()
         self.kf_results = deque(maxlen=TRAIL_LENGTH)
         self.last_kf_pos = (-100, -100)
+        self.kf_age = 0
 
         self._t_track = deque(maxlen=100)
         self.__last_frame_idx = None
@@ -81,13 +84,33 @@ class Tracker:
         self.contours = None
         self.largest_contour = None
 
+        self.search_point = None
+        self.search_window_size = SEARCH_WINDOW_SIZE
+
     def make_mask(self, frame, global_threshold=70):
         logging.debug('Creating mask')
         _, mask = cv2.threshold(frame, global_threshold, 255, cv2.THRESH_BINARY)
         self.mask_frame = cv2.morphologyEx(mask, cv2.MORPH_OPEN, KERNEL_3)
         self.has_mask = True
 
+    def get_search_window(self):
+        x1 = min(max(0, self.search_point[0] - self.search_window_size // 2), FRAME_WIDTH)
+        y1 = min(max(0, self.search_point[1] - self.search_window_size // 2), FRAME_HEIGHT)
+
+        x2 = min(max(0, self.search_point[0] + self.search_window_size // 2), FRAME_WIDTH)
+        y2 = min(max(0, self.search_point[1] + self.search_window_size // 2), FRAME_HEIGHT)
+        return (x1, y1), (x2, y2)
+
     def annotate(self):
+        # draw search window
+        if self.search_point is not None:
+            p1, p2 = self.get_search_window()
+
+            cv2.rectangle(self.img, p1, p2, color=(255, 255, 255), thickness=1)
+        else:
+            cv2.rectangle(self.img, (0, 0), (FRAME_WIDTH-1, FRAME_HEIGHT-1), color=(255, 255, 255), thickness=1)
+
+        # draw all detected contours to see masking issues
         if DRAW_MINOR_CONTOURS and self.contours is not None:
             cv2.drawContours(self.img, self.contours, -1, (150, 150, 0), THICKNESS_MINOR_CONTOUR)
 
@@ -150,15 +173,30 @@ class Tracker:
             except KeyError as e:
                 logging.exception(e)
 
-            foi = cv2.cvtColor(self.img, cv2.COLOR_RGB2GRAY)
-
             # It takes time to fire up the cameras, so first frames might be zeros.
             # Check until we have a mask
-            if not self.has_mask and np.mean(np.mean(foi)) > 15:
-                logging.info('Grabbing mask')
-                self.make_mask(foi, global_threshold=self.thresh_mask)
+            if not self.has_mask:
+                foi = cv2.cvtColor(self.img, cv2.COLOR_RGB2GRAY)
+                if np.mean(foi) > 15:
+                    logging.info('Grabbing mask')
+                    self.make_mask(cv2.cvtColor(self.img, cv2.COLOR_RGB2GRAY), global_threshold=self.thresh_mask)
 
-            masked = cv2.bitwise_not(foi) * (self.mask_frame // 255)
+            # cut out search window from image and from mask, if needed
+            if self.search_point is None:
+                foi = cv2.cvtColor(self.img, cv2.COLOR_RGB2GRAY)
+                mask = self.mask_frame // 255
+                foi_ofs = (0, 0)
+            else:
+                p1, p2 = self.get_search_window()
+                foi = cv2.cvtColor(self.img[p1[1]:p2[1], p1[0]:p2[0]], cv2.COLOR_RGB2GRAY)
+                foi_ofs = p1
+                mask = self.mask_frame[p1[1]:p2[1], p1[0]:p2[0]] // 255
+                # tid = self.id
+                # print(tid, self.img.shape, self.search_point, 'w', (p1[0], p2[0]), 'h', (p1[1], p2[1]))
+
+            cv2.imshow('foi {}'.format(self.id), foi)
+
+            masked = cv2.bitwise_not(foi) * (mask)
             masked = cv2.morphologyEx(masked, cv2.MORPH_OPEN, KERNEL_3)
 
             _, thresh = cv2.threshold(masked, self.thresh_detect, 255, cv2.THRESH_BINARY)
@@ -184,12 +222,21 @@ class Tracker:
 
             self.active_node = None
             if largest_cnt is None:
+                self.kf_age += 1
                 self.results.appendleft(None)
+                self.search_window_size = min(self.search_window_size * 2, max(FRAME_WIDTH, FRAME_HEIGHT * 2))
             else:
                 # center coordinates of contour
+                self.search_window_size = SEARCH_WINDOW_SIZE
                 cx, cy = centroid(largest_cnt)
+
+                # Correct coordinates for search window location
+                cx += foi_ofs[0]
+                cy += foi_ofs[1]
+
                 self.results.appendleft((cx, cy))
                 self.kf.correct(cx, cy)
+                self.kf_age = 0
 
                 # Find closest node
                 for node_id, node in self.nodes.items():
@@ -204,13 +251,26 @@ class Tracker:
                 logging.info('Tracker {}: {} {}'.format(self.id, '    ' * self.id, self.last_node))
 
             # Kalman filter of position
-            kf_res = self.kf.predict()
-            kfx, kfy = int(kf_res[0]), int(kf_res[1])
-            self.kf_results.appendleft((kfx, kfy))
-            self.last_kf_pos = (kfx, kfy)
+            # Only predict position if the age of the last measurement is low enough
+            # Else assume KF has no useful information about mouse position either.
+            if self.kf_age < 10:
+                kf_res = self.kf.predict()
+                kfx = min(max(0, int(kf_res[0])), FRAME_WIDTH)
+                kfy = min(max(0, int(kf_res[1])), FRAME_HEIGHT)
 
-            # Detect LED state
-            self.led_state = foi[self.led_pos[1], self.led_pos[0]] > self.thresh_led
+                self.kf_results.appendleft((kfx, kfy))
+
+                self.last_kf_pos = (kfx, kfy)
+                self.search_point = self.last_kf_pos
+
+            else:
+                self.search_point = None
+                self.last_kf_pos = None
+                self.kf_results.appendleft(None)
+
+            # Detect LED state (mean value of red channel around led center)
+            led_img = self.img[self.led_pos[1]-1:self.led_pos[1]+2, self.led_pos[0]-1:self.led_pos[0]+2, 0]
+            self.led_state = np.mean(led_img) > self.thresh_led
 
             self.n_frames += 1
 

@@ -27,4 +27,7 @@ On Ubuntu 18.04.1 using anaconda, opencv is not distributed with any GUI support
 
 [ ] Wrap HexTrack in Qt5 GUI
 
-[ ] Search ROI to reduce processing load when having good idea of target location
+[X] Search ROI to reduce processing load when having good idea of target location
+
+[ ] Adjust min area to confidence in mouse location. If high confidence,
+    area can be smaller, catching partial coverage.

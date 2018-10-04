@@ -197,9 +197,9 @@ class HexTrack:
             self._loop_times.appendleft(elapsed)
             t0 = cv2.getTickCount()
 
-            if not (frame_idx % 100):
-                logging.debug(
-                    'Display/tracking at {:.1f} fps'.format(1000 / (sum(self._loop_times) / len(self._loop_times))))
+            # if not (frame_idx % 100):
+            #     logging.debug(
+            #         'Display/tracking at {:.1f} fps'.format(1000 / (sum(self._loop_times) / len(self._loop_times))))
 
     def add_overlay(self, frame, t):
         """Overlay of time passed in normal/recording mode with recording indicator"""

@@ -75,10 +75,10 @@ class Grabber(threading.Thread):
             t0 = cv2.getTickCount()
 
             # Every now and then show fps
-            if not self.n_frames % N_FRAMES_FPS_LOG:
-                avg_fps = 1 / (sum(self._t_loop) / len(self._t_loop))
-                logging.debug(
-                    'Grabbing frame {}... {}, avg. {:.1f} fps'.format(self.n_frames, 'OK' if rt else 'FAIL', avg_fps))
+            # if not self.n_frames % N_FRAMES_FPS_LOG:
+            #     avg_fps = 1 / (sum(self._t_loop) / len(self._t_loop))
+            #     logging.debug(
+            #         'Grabbing frame {}... {}, avg. {:.1f} fps'.format(self.n_frames, 'OK' if rt else 'FAIL', avg_fps))
 
         logging.debug('Stopping loop in {}!'.format(self.name))
 
