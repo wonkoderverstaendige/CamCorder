@@ -178,6 +178,10 @@ class HexTrack:
                 # writing frames even of display/tracking is slow
                 self.denoising = not self.denoising
 
+            elif key == ord('m'):
+                for tracker in self.trackers:
+                    tracker.has_mask = False
+
             elif key in [ord('t'), ord('.'), 85, 86]:
                 # Start/stop a trial period
                 if not self.ev_trial_active.is_set():

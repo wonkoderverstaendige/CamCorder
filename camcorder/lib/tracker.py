@@ -52,12 +52,14 @@ class Tracker:
         super().__init__()
         self.id = idx
         self.n_frames = 0
+        self.img = None
         self.thresh_mask = thresh_mask
         self.thresh_detect = 255 - thresh_detect
         self.thresh_led = thresh_led
 
+        self.foi_frame = None
         self.mask_frame = np.zeros((FRAME_HEIGHT, FRAME_WIDTH), np.uint8)
-        self.have_mask = False
+        self.has_mask = False
 
         self.nodes = nodes[self.id]
         self.results = deque(maxlen=TRAIL_LENGTH)
@@ -78,6 +80,12 @@ class Tracker:
 
         self.contours = None
         self.largest_contour = None
+
+    def make_mask(self, frame, global_threshold=70):
+        logging.debug('Creating mask')
+        _, mask = cv2.threshold(frame, global_threshold, 255, cv2.THRESH_BINARY)
+        self.mask_frame = cv2.morphologyEx(mask, cv2.MORPH_OPEN, KERNEL_3)
+        self.has_mask = True
 
     def annotate(self):
         if DRAW_MINOR_CONTOURS and self.contours is not None:
@@ -121,7 +129,6 @@ class Tracker:
                 else:
                     cv2.line(self.img, (x1, y1), (x2, y2), color=(50, 50, 255), thickness=1)
 
-
     def apply(self, frame):
         t0 = cv2.getTickCount()
 
@@ -147,11 +154,9 @@ class Tracker:
 
             # It takes time to fire up the cameras, so first frames might be zeros.
             # Check until we have a mask
-            if not self.have_mask and np.sum(np.sum(foi)):
-                logging.debug('Creating mask')
-                _, mask = cv2.threshold(foi, self.thresh_mask, 255, cv2.THRESH_BINARY)
-                self.mask_frame = cv2.morphologyEx(mask, cv2.MORPH_OPEN, KERNEL_3)
-                self.have_mask = True
+            if not self.has_mask and np.mean(np.mean(foi)) > 15:
+                logging.info('Grabbing initial mask')
+                self.make_mask(foi, global_threshold=self.thresh_mask)
 
             masked = cv2.bitwise_not(foi) * (self.mask_frame // 255)
             masked = cv2.morphologyEx(masked, cv2.MORPH_OPEN, KERNEL_3)
