@@ -19,6 +19,7 @@ DRAW_MAJOR_CONTOURS = True
 TRAIL_LENGTH = 128
 DRAW_TRAIL = True
 DRAW_KF_TRAIL = True
+KF_REGISTRATION_AGE = 10
 
 SEARCH_WINDOW_SIZE = 60
 
@@ -194,7 +195,7 @@ class Tracker:
                 # tid = self.id
                 # print(tid, self.img.shape, self.search_point, 'w', (p1[0], p2[0]), 'h', (p1[1], p2[1]))
 
-            cv2.imshow('foi {}'.format(self.id), foi)
+            # cv2.imshow('foi {}'.format(self.id), foi)
 
             masked = cv2.bitwise_not(foi) * (mask)
             masked = cv2.morphologyEx(masked, cv2.MORPH_OPEN, KERNEL_3)
@@ -215,6 +216,11 @@ class Tracker:
                         largest_area = area
                         largest_cnt = cnt
 
+            # Correct coordinates for search window location
+            if largest_cnt is not None:
+                largest_cnt[:, :, 0] = largest_cnt[:, :, 0] + foi_ofs[0]
+                largest_cnt[:, :, 1] = largest_cnt[:, :, 1] + foi_ofs[1]
+
             self.contours = contours
             self.largest_contour = largest_cnt
 
@@ -224,15 +230,12 @@ class Tracker:
             if largest_cnt is None:
                 self.kf_age += 1
                 self.results.appendleft(None)
-                self.search_window_size = min(self.search_window_size * 2, max(FRAME_WIDTH, FRAME_HEIGHT * 2))
+                self.search_window_size = min(int(self.search_window_size * 1.5), max(FRAME_WIDTH, FRAME_HEIGHT * 2))
             else:
                 # center coordinates of contour
                 self.search_window_size = SEARCH_WINDOW_SIZE
                 cx, cy = centroid(largest_cnt)
 
-                # Correct coordinates for search window location
-                cx += foi_ofs[0]
-                cy += foi_ofs[1]
 
                 self.results.appendleft((cx, cy))
                 self.kf.correct(cx, cy)
@@ -253,7 +256,7 @@ class Tracker:
             # Kalman filter of position
             # Only predict position if the age of the last measurement is low enough
             # Else assume KF has no useful information about mouse position either.
-            if self.kf_age < 10:
+            if self.kf_age < KF_REGISTRATION_AGE:
                 kf_res = self.kf.predict()
                 kfx = min(max(0, int(kf_res[0])), FRAME_WIDTH)
                 kfy = min(max(0, int(kf_res[1])), FRAME_HEIGHT)
