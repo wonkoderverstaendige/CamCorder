@@ -47,25 +47,19 @@ class Frame:
         """Add tick- and timestamp to the unused section of the metadata frame.
         TODO: This should happen in Grabber, not the tracker, to record this in the video, too.
         """
-        ty = self.img.shape[0] - 4
-        tx = self.width - 225
+        ty = self.img.shape[0] - 5
+        tx = self.width - 143
         thickness = 1
-        font_scale = 1.2
+        font_scale = 1.0
         bg, fg = (0, 0, 0), (255, 255, 255)
 
-        if self.tickstamp is not None:
-            t_str = '{} '.format((int(self.tickstamp)))
-            cv2.putText(self.img, t_str, (tx, ty), FONT, font_scale, fg,
-                        thickness, lineType=cv2.LINE_AA)
-            tx += 135
+        ms = "{0:03d}".format(int((self.timestamp - int(self.timestamp)) * 1000))
+        ts = time.strftime("%H:%M:%S.{}  %d.%m.%Y", time.localtime(self.timestamp)).format(ms)
 
-        if self.timestamp is not None:
-            t_str = time.strftime("%H:%M:%S.{}   %d.%m.%Y", time.localtime(self.timestamp))
-            ms = "{0:03d}".format(int((self.timestamp - int(self.timestamp)) * 1000))
-            t_str = t_str.format(ms)
+        t_str = '{}  {}'.format(int(self.tickstamp), ts)
 
-            cv2.putText(self.img, t_str, (tx, ty), FONT, font_scale, fg,
-                        thickness, lineType=cv2.LINE_AA)
+        cv2.putText(self.img, t_str, (tx, ty), FONT, font_scale, fg,
+                    thickness, lineType=METADATA_LINE_TYPE)
 
 
 class Grabber(threading.Thread):
@@ -131,12 +125,12 @@ class Grabber(threading.Thread):
             # Send frames to attached threads/processes
             self.relay_frames()
 
-            # Slow down "replay" if the image source is a video file to emulate realtime replay
+            # Slow down "replay" if the image source is a video file to emulate real time replay
             if not self.is_live:
                 time.sleep(1 / self.capture.get(cv2.CAP_PROP_FPS) / PLAYBACK_SPEEDUP)
             self.n_frames += 1
 
-            self._t_loop.appendleft((cv2.getTickCount() - t0) / cv2.getTickFrequency())
+            self._t_loop.appendleft((cv2.getTickCount() - t0) / cv2.getTickFrequency() * 1000)
             t0 = cv2.getTickCount()
 
             # Every now and then show fps
@@ -163,6 +157,14 @@ class Grabber(threading.Thread):
             self._write_queue.put(self.frame, timeout=.5)
         except Full:
             logging.warning('Dropped frame {}'.format(self.frame.index))
+
+        # FPS display
+        if len(self._t_loop):
+            fps_str = 'G={:.1f}fps'.format(1000 / (sum(self._t_loop) / len(self._t_loop)))
+        else:
+            fps_str = 'G=??.?fps'
+        cv2.putText(self.frame.img, fps_str, (270, self.frame.img.shape[0] - 5), FONT, 1.0,
+                    (255, 255, 255), lineType=cv2.LINE_AA)
 
         # Forward frame for tracking and display
         # NOTE: [:] indicates to reuse the buffer

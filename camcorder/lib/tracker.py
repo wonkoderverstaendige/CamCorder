@@ -6,7 +6,7 @@ import logging
 from collections import deque
 
 from camcorder.util.defaults import *
-from camcorder.util.utilities import extract_metadata, fmt_time
+from camcorder.util.utilities import extract_metadata
 from camcorder.lib.kalman import KalmanFilter
 
 MIN_MOUSE_AREA = 50
@@ -28,7 +28,7 @@ KERNEL_3 = np.ones((3, 3), np.uint8)
 
 
 def centroid(cnt):
-    """Centroid of an opencv contour"""
+    """Centroid of an OpenCV contour"""
     m = cv2.moments(cnt)
     cx = int(m['m10'] / m['m00'])
     cy = int(m['m01'] / m['m00'])
@@ -89,7 +89,7 @@ class Tracker:
         self.last_kf_pos = (-100, -100)
         self.kf_age = 0
 
-        self._t_track = deque(maxlen=100)
+        self._track_times = deque(maxlen=100)
         self.__last_frame_idx = None
         self.__last_frame_tickstamp = None
 
@@ -173,6 +173,7 @@ class Tracker:
                     pass
                 else:
                     cv2.line(self.img, (x1, y1), (x2, y2), color=(50, 50, 255), thickness=1)
+
 
     def apply(self, frame):
         """Apply a frame to the current state of the tracker. Will apply the mask, find a large enough
@@ -310,4 +311,4 @@ class Tracker:
             self.n_frames += 1
 
             elapsed = (cv2.getTickCount() - t0) / cv2.getTickFrequency() * 1000
-            self._t_track.appendleft(elapsed)
+            self._track_times.appendleft(elapsed)

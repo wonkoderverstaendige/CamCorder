@@ -55,7 +55,6 @@ class HexTrack:
             self.frame = buf_to_numpy(self._shared_arr, shape=(self.h * len(self.sources), self.w, self.c))
         self.paused_frame = np.zeros_like(self.frame)
 
-
         # Allocate scrolling frame with node visits
         self.disp_frame = np.zeros((self.h * len(self.sources), self.w + NODE_FRAME_WIDTH, 3), dtype=np.uint8)
         self.disp_frame[:1] = NODE_FRAME_FG_INACTIVE
@@ -69,8 +68,9 @@ class HexTrack:
                                  trigger_event=self.ev_stop, idx=n) for n in range(len(self.sources))]
 
         # Video storage writers
-        self.writers = [Writer(cfg=self.cfg, in_queue=self.queues[n], ev_alive=self.ev_stop, ev_recording=self.ev_recording,
-                               ev_trial_active=self.ev_trial_active, idx=n) for n in range(len(self.sources))]
+        self.writers = [
+            Writer(cfg=self.cfg, in_queue=self.queues[n], ev_alive=self.ev_stop, ev_recording=self.ev_recording,
+                   ev_trial_active=self.ev_trial_active, idx=n) for n in range(len(self.sources))]
 
         # Online tracker
         self.trackers = [Tracker(cfg=self.cfg, nodes=nodes[n], idx=n) for n in range(len(self.sources))]
@@ -89,7 +89,11 @@ class HexTrack:
     def loop(self):
         frame_idx = 0
         t0 = cv2.getTickCount()
-        while all([grabber.is_alive() for grabber in self.grabbers]):
+        while not self.ev_stop.is_set():
+            if not all([grabber.is_alive() for grabber in self.grabbers]):
+                self.stop()
+                break
+
             if self.paused:
                 frame = self.paused_frame
             else:
@@ -147,59 +151,12 @@ class HexTrack:
                 logging.debug((cv2.getTickCount() - t) / cv2.getTickFrequency())
                 cv2.imshow('denoised', dn)
 
-            # Event loop call
-            key = cv2.waitKey(25)
-
-            # Process Keypress Events
-            if key == ord('q'):
-                self.stop()
-                break
-
-            elif key == ord('r'):
-                # Start or stop recording
-                self.t_phase = cv2.getTickCount()
-                if not self.ev_recording.is_set():
-                    self.ev_recording.set()
-                else:
-                    self.ev_recording.clear()
-
-            elif key == ord(' '):
-                # Pause display (not acquisition!)
-                self.paused = not self.paused
-                if self.paused:
-                    self.paused_frame = self.frame.copy()
-
-            elif key == ord('d'):
-                # Enable dummy processing to slow down main loop
-                # demonstrates the backend continuously grabbing and
-                # writing frames even of display/tracking is slow
-                self.denoising = not self.denoising
-
-            elif key == ord('m'):
-                for tracker in self.trackers:
-                    tracker.has_mask = False
-
-            elif key in [ord('t'), ord('.'), 85, 86]:
-                # Start/stop a trial period
-                if not self.ev_trial_active.is_set():
-                    self.ev_trial_active.set()
-                else:
-                    self.ev_trial_active.clear()
-                logging.info('Trial {}'.format(
-                    '++++++++ active ++++++++' if self.ev_trial_active.is_set() else '------- inactive -------'))
-
-            # Detect if close button of hextrack was pressed.
-            # May not be reliable on all platforms/GUI backends
-            if cv2.getWindowProperty('HexTrack', cv2.WND_PROP_AUTOSIZE) < 1:
-                self.stop()
+            # Check for keypresses and such
+            self.process_events()
 
             elapsed = ((cv2.getTickCount() - t0) / cv2.getTickFrequency()) * 1000
             self._loop_times.appendleft(elapsed)
             t0 = cv2.getTickCount()
-
-            # if not (frame_idx % 100):
-            #     logging.debug(
-            #         'Display/tracking at {:.1f} fps'.format(1000 / (sum(self._loop_times) / len(self._loop_times))))
 
     def add_overlay(self, frame, t):
         """Overlay of time passed in normal/recording mode with recording indicator"""
@@ -222,10 +179,62 @@ class HexTrack:
                       (ox + ts[0] + 2 * radius, frame.shape[0] - oy - ts[1] - thickness), bg, cv2.FILLED)
 
         cv2.putText(frame, t_str, (ox, frame.shape[0] - oy), FONT, font_scale, fg,
-                    thickness, lineType=cv2.LINE_AA)
+                    thickness, lineType=METADATA_LINE_TYPE)
 
         if self.ev_recording.is_set():
             cv2.circle(frame, (ox + ts[0] + radius, frame.shape[0] - ts[1] // 2 - oy), radius, (0, 0, 255), -1)
+
+        if len(self._loop_times):
+            fps_str = 'D={:.1f}fps'.format(1000 / (sum(self._loop_times) / len(self._loop_times)))
+        else:
+            fps_str = 'D=??.?fps'
+        cv2.putText(frame, fps_str, (ox + 170, frame.shape[0] - oy - 1), FONT, 1.0, fg, lineType=METADATA_LINE_TYPE)
+
+    def process_events(self):
+        # Event loop call
+        key = cv2.waitKey(25)
+
+        # Process Keypress Events
+        if key == ord('q'):
+            self.stop()
+
+        elif key == ord('r'):
+            # Start or stop recording
+            self.t_phase = cv2.getTickCount()
+            if not self.ev_recording.is_set():
+                self.ev_recording.set()
+            else:
+                self.ev_recording.clear()
+
+        elif key == ord(' '):
+            # Pause display (not acquisition!)
+            self.paused = not self.paused
+            if self.paused:
+                self.paused_frame = self.frame.copy()
+
+        elif key == ord('d'):
+            # Enable dummy processing to slow down main loop
+            # demonstrates the backend continuously grabbing and
+            # writing frames even of display/tracking is slow
+            self.denoising = not self.denoising
+
+        elif key == ord('m'):
+            for tracker in self.trackers:
+                tracker.has_mask = False
+
+        elif key in [ord('t'), ord('.'), 85, 86]:
+            # Start/stop a trial period
+            if not self.ev_trial_active.is_set():
+                self.ev_trial_active.set()
+            else:
+                self.ev_trial_active.clear()
+            logging.info('Trial {}'.format(
+                '++++++++ active ++++++++' if self.ev_trial_active.is_set() else '------- inactive -------'))
+
+        # Detect if close button of hextrack was pressed.
+        # May not be reliable on all platforms/GUI backends
+        if cv2.getWindowProperty('HexTrack', cv2.WND_PROP_AUTOSIZE) < 1:
+            self.stop()
 
     def stop(self):
         self.ev_stop.set()
@@ -240,6 +249,7 @@ class HexTrack:
         for writer in self.writers:
             writer.join()
         logging.debug('All Writers joined!')
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -277,7 +287,8 @@ if __name__ == '__main__':
     if cli_args.sources is not None:
         cfg['frame_sources'] = cli_args.sources
 
-    num_bytes = cfg['frame_width'] * (cfg['frame_height'] + FRAME_METADATA_H) * cfg['frame_colors'] * len(cfg['frame_sources'])
+    num_bytes = cfg['frame_width'] * (cfg['frame_height'] + FRAME_METADATA_H) * cfg['frame_colors'] * len(
+        cfg['frame_sources'])
     SHARED_ARR = mp.Array(ctypes.c_ubyte, num_bytes)
     logging.debug('Created shared array: {}'.format(SHARED_ARR))
 

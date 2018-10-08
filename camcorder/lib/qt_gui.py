@@ -1,4 +1,4 @@
-"""Qt5 demo GUI cobbled together from StackOverlow answers."""
+"""Qt5 demo GUI cobbled together from StackOverflow answers."""
 import sys
 import cv2
 
