@@ -32,7 +32,7 @@ class Grabber(threading.Thread):
         self.height = cfg['frame_height']
         self.colors = cfg['frame_colors']
 
-        shape = (self.height + FRAME_METADATA, self.width, self.colors)
+        shape = (self.height + FRAME_METADATA_H, self.width, self.colors)
         num_bytes = int(np.prod(shape))
 
         with arr.get_lock():
@@ -90,7 +90,7 @@ class Grabber(threading.Thread):
         line[0] = np.array([self.id], dtype=np.uint8)
         line[1:7] = np.fromstring('{:<6s}'.format(label), dtype=np.uint8)
         line[7:] = np.array([data], dtype=np.uint64).view(np.uint8)
-        self._fresh_frame[-FRAME_METADATA + row:-FRAME_METADATA + row + 1, -FRAME_METADATA_BYTE // 3:] = line.reshape(1, -1, 3)
+        self._fresh_frame[-FRAME_METADATA_H + row:-FRAME_METADATA_H + row + 1, -FRAME_METADATA_BYTE // 3:] = line.reshape(1, -1, 3)
 
     def relay_frames(self):
         # Forward frame to Writer via Queue
@@ -102,8 +102,8 @@ class Grabber(threading.Thread):
         # Forward frame for tracking and display
         # NOTE: [:] indicates to reuse the buffer
         with self._shared_arr.get_lock():
-            self._fresh_frame[:-FRAME_METADATA, :] = self.frame.img
-            self._fresh_frame[-FRAME_METADATA:, -FRAME_METADATA_BYTE:] = 0  # (255, 128, 0)
+            self._fresh_frame[:-FRAME_METADATA_H, :] = self.frame.img
+            self._fresh_frame[-FRAME_METADATA_H:, -FRAME_METADATA_BYTE:] = 0  # (255, 128, 0)
 
             # Embed timestamp and frame index
             # index = np.zeros(FRAME_METADATA_BYTE, dtype=np.uint8)

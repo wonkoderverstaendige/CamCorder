@@ -45,7 +45,7 @@ class HexTrack:
         self.denoising = False
 
         self.w = cfg['frame_width']
-        self.h = cfg['frame_height'] + FRAME_METADATA
+        self.h = cfg['frame_height'] + FRAME_METADATA_H
         self.c = cfg['frame_colors']
 
         # Shared array population
@@ -271,7 +271,7 @@ if __name__ == '__main__':
     if cli_args.sources is not None:
         cfg['frame_sources'] = cli_args.sources
 
-    num_bytes = cfg['frame_width'] * (cfg['frame_height'] + FRAME_METADATA) * cfg['frame_colors'] * len(cfg['frame_sources'])
+    num_bytes = cfg['frame_width'] * (cfg['frame_height'] + FRAME_METADATA_H) * cfg['frame_colors'] * len(cfg['frame_sources'])
     SHARED_ARR = mp.Array(ctypes.c_ubyte, num_bytes)
     logging.debug('Created shared array: {}'.format(SHARED_ARR))
 

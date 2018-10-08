@@ -99,12 +99,14 @@ class Tracker:
         self.search_point = None
         self.search_window_size = SEARCH_WINDOW_SIZE
 
+        self.log = logging.getLogger('Tracker {}'.format(self.id))
+
     def make_mask(self, frame, global_threshold=70):
         """Using the current frame, create a threshold based mask to segment out track from
         arena background. May be done any time, e.g. to correct for changes in the environment or
         lighting conditions.
         """
-        logging.debug('Creating mask')
+        self.log.debug('Creating mask')
         _, mask = cv2.threshold(frame, global_threshold, 255, cv2.THRESH_BINARY)
         self.mask_frame = cv2.morphologyEx(mask, cv2.MORPH_OPEN, KERNEL_3)
         self.has_mask = True
@@ -206,14 +208,14 @@ class Tracker:
         """
         t0 = cv2.getTickCount()
 
-        f_start = self.id * (self.height + FRAME_METADATA)
-        f_end = (self.id + 1) * (self.height + FRAME_METADATA)
+        f_start = self.id * (self.height + FRAME_METADATA_H)
+        f_end = (self.id + 1) * (self.height + FRAME_METADATA_H)
         self.frame = frame[f_start:f_end, :]
 
         # Actual image data, excluding metadata strip
-        self.img = self.frame[:-FRAME_METADATA, :]
+        self.img = self.frame[:-FRAME_METADATA_H, :]
 
-        metadata = extract_metadata(self.frame[-FRAME_METADATA:, -FRAME_METADATA_BYTE // self.colors:])
+        metadata = extract_metadata(self.frame[-FRAME_METADATA_H:, -FRAME_METADATA_BYTE // self.colors:])
 
         frame_of_interest = not ('index' not in metadata or metadata['index'] == self.__last_frame_idx)
 
@@ -230,14 +232,14 @@ class Tracker:
                 self.__last_frame_idx = metadata['index']
                 self.__last_frame_tickstamp = metadata['tickst']
             except KeyError as e:
-                logging.exception(e)
+                self.log.exception(e)
 
             # It takes time to fire up the cameras, so first frames might be zeros.
             # Check until we have a mask
             if not self.has_mask:
                 foi = cv2.cvtColor(self.img, cv2.COLOR_RGB2GRAY)
                 if np.mean(foi) > 15:
-                    logging.info('Grabbing mask')
+                    self.log.info('Grabbing mask')
                     self.make_mask(cv2.cvtColor(self.img, cv2.COLOR_RGB2GRAY), global_threshold=self.thresh_mask)
 
             # cut out search window from image and from mask, if needed
@@ -308,7 +310,7 @@ class Tracker:
             if self.last_node != self.active_node and self.active_node is not None:
                 self.last_node = self.active_node
                 self.node_updated_presented = False
-                logging.info('Tracker {}: {} {}'.format(self.id, '    ' * self.id, self.last_node))
+                self.log.info('Tracker {}: {} {}'.format(self.id, '    ' * self.id, self.last_node))
 
             # Kalman filter of position
             # Only predict position if the age of the last measurement is low enough
