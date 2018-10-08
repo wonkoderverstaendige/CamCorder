@@ -152,19 +152,7 @@ class HexTrack:
 
             # Process Keypress Events
             if key == ord('q'):
-                self.ev_stop.set()
-                logging.debug('Join request sent!')
-
-                # Shut down Grabbers
-                for grabber in self.grabbers:
-                    grabber.join()
-                logging.debug('All Grabbers joined!')
-
-                # Shut down Writers
-                for writer in self.writers:
-                    writer.join()
-                logging.debug('All Writers joined!')
-
+                self.stop()
                 break
 
             elif key == ord('r'):
@@ -200,6 +188,11 @@ class HexTrack:
                 logging.info('Trial {}'.format(
                     '++++++++ active ++++++++' if self.ev_trial_active.is_set() else '------- inactive -------'))
 
+            # Detect if close button of hextrack was pressed.
+            # May not be reliable on all platforms/GUI backends
+            if cv2.getWindowProperty('HexTrack', cv2.WND_PROP_AUTOSIZE) < 1:
+                self.stop()
+
             elapsed = ((cv2.getTickCount() - t0) / cv2.getTickFrequency()) * 1000
             self._loop_times.appendleft(elapsed)
             t0 = cv2.getTickCount()
@@ -234,6 +227,19 @@ class HexTrack:
         if self.ev_recording.is_set():
             cv2.circle(frame, (ox + ts[0] + radius, frame.shape[0] - ts[1] // 2 - oy), radius, (0, 0, 255), -1)
 
+    def stop(self):
+        self.ev_stop.set()
+        logging.debug('Join request sent!')
+
+        # Shut down Grabbers
+        for grabber in self.grabbers:
+            grabber.join()
+        logging.debug('All Grabbers joined!')
+
+        # Shut down Writers
+        for writer in self.writers:
+            writer.join()
+        logging.debug('All Writers joined!')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
