@@ -1,11 +1,12 @@
 import cv2
+import time
 import math
 import numpy as np
 import logging
 from collections import deque
 
 from camcorder.util.defaults import *
-from camcorder.util.utilities import extract_metadata
+from camcorder.util.utilities import extract_metadata, fmt_time
 from camcorder.lib.kalman import KalmanFilter
 
 MIN_MOUSE_AREA = 50
@@ -25,11 +26,9 @@ SEARCH_WINDOW_SIZE = 60
 
 KERNEL_3 = np.ones((3, 3), np.uint8)
 
-nodes = [NODES_A, NODES_B]
-leds = [LED_A, LED_B]
-
 
 def centroid(cnt):
+    """Centroid of an opencv contour"""
     m = cv2.moments(cnt)
     cx = int(m['m10'] / m['m00'])
     cy = int(m['m01'] / m['m00'])
@@ -37,10 +36,13 @@ def centroid(cnt):
 
 
 def distance(x1, y1, x2, y2):
+    """Euclidean distance."""
     return math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
 
 
 class TrackerResult:
+    """Collection of values of interest calculated per tracker update.
+    """
     def __init__(self, t_id, idx, tickstamp=None, led_state=None, last_node=None, node_update=False, fresh=True):
         self.idx = idx
         self.id = t_id
@@ -50,27 +52,36 @@ class TrackerResult:
         self.node_update = node_update
         self.fresh = fresh
 
+
 class Tracker:
-    def __init__(self, idx=0, thresh_mask=100, thresh_detect=35, thresh_led=70):
+    def __init__(self, cfg, nodes, idx=0, thresh_mask=100, thresh_detect=35, thresh_led=70):
         super().__init__()
         self.id = idx
+        self.cfg = cfg
+
+        self.nodes = {k:v for k, v in nodes.items() if k != 'led'}
+        self.led = nodes['led'] if 'led' in nodes else []
+
         self.n_frames = 0
+        self.frame = None
         self.img = None
         self.thresh_mask = thresh_mask
         self.thresh_detect = 255 - thresh_detect
         self.thresh_led = thresh_led
 
+        self.width = cfg['frame_width']
+        self.height = cfg['frame_height']
+        self.colors = cfg['frame_colors']
+
         self.foi_frame = None
-        self.mask_frame = np.zeros((FRAME_HEIGHT, FRAME_WIDTH), np.uint8)
+        self.mask_frame = np.zeros((self.height, self.width), np.uint8)
         self.has_mask = False
 
-        self.nodes = nodes[self.id]
         self.results = deque(maxlen=TRAIL_LENGTH)
         self.last_node = None
         self.active_node = None
         self.node_updated_presented = True
 
-        self.led_pos = leds[self.id]
         self.led_state = False
 
         self.kf = KalmanFilter()
@@ -89,27 +100,35 @@ class Tracker:
         self.search_window_size = SEARCH_WINDOW_SIZE
 
     def make_mask(self, frame, global_threshold=70):
+        """Using the current frame, create a threshold based mask to segment out track from
+        arena background. May be done any time, e.g. to correct for changes in the environment or
+        lighting conditions.
+        """
         logging.debug('Creating mask')
         _, mask = cv2.threshold(frame, global_threshold, 255, cv2.THRESH_BINARY)
         self.mask_frame = cv2.morphologyEx(mask, cv2.MORPH_OPEN, KERNEL_3)
         self.has_mask = True
 
     def get_search_window(self):
-        x1 = min(max(0, self.search_point[0] - self.search_window_size // 2), FRAME_WIDTH)
-        y1 = min(max(0, self.search_point[1] - self.search_window_size // 2), FRAME_HEIGHT)
+        """Calculate the bounding box around a search point, i.e. last animal position or
+         Kalman filter prediction.
+         """
+        x1 = min(max(0, self.search_point[0] - self.search_window_size // 2), self.width)
+        y1 = min(max(0, self.search_point[1] - self.search_window_size // 2), self.height)
 
-        x2 = min(max(0, self.search_point[0] + self.search_window_size // 2), FRAME_WIDTH)
-        y2 = min(max(0, self.search_point[1] + self.search_window_size // 2), FRAME_HEIGHT)
+        x2 = min(max(0, self.search_point[0] + self.search_window_size // 2), self.width)
+        y2 = min(max(0, self.search_point[1] + self.search_window_size // 2), self.height)
         return (x1, y1), (x2, y2)
 
     def annotate(self):
-        # draw search window
+        """Label all kinds of things in the image.
+        """
         if self.search_point is not None:
             p1, p2 = self.get_search_window()
 
             cv2.rectangle(self.img, p1, p2, color=(255, 255, 255), thickness=1)
         else:
-            cv2.rectangle(self.img, (0, 0), (FRAME_WIDTH-1, FRAME_HEIGHT-1), color=(255, 255, 255), thickness=1)
+            cv2.rectangle(self.img, (0, 0), (self.width-1, self.height-1), color=(255, 255, 255), thickness=1)
 
         # draw all detected contours to see masking issues
         if DRAW_MINOR_CONTOURS and self.contours is not None:
@@ -153,16 +172,55 @@ class Tracker:
                 else:
                     cv2.line(self.img, (x1, y1), (x2, y2), color=(50, 50, 255), thickness=1)
 
+
+    def add_stamps(self, tickstamp=None, timestamp=None):
+        """Add tick- and timestamp to the unused section of the metadata frame.
+        TODO: This should happen in Grabber, not the tracker, to record this in the video, too.
+        """
+        ty = self.frame.shape[0] - 4
+        tx = self.width - 380
+        thickness = 1
+        font_scale = 1.2
+        bg, fg = (0, 0, 0), (255, 255, 255)
+
+
+        if tickstamp is not None:
+            t_str = '{} '.format((int(tickstamp)))
+            cv2.putText(self.frame, t_str, (tx, ty), FONT, font_scale, fg,
+                        thickness, lineType=cv2.LINE_AA)
+            tx += 160
+
+
+        if timestamp is not None:
+            t_str = time.strftime("%H:%M:%S %d.%m.%Y", time.localtime(timestamp))
+            ms = "{0:03d}".format(int((timestamp - int(timestamp)) * 1000))
+            self.time_text = ".".join([t_str, ms])
+
+            cv2.putText(self.frame, t_str, (tx, ty), FONT, font_scale, fg,
+                        thickness, lineType=cv2.LINE_AA)
+
     def apply(self, frame):
+        """Apply a frame to the current state of the tracker. Will apply the mask, find a large enough
+        blob in the masked image and try to get its centroid. Updates the Kalman filter and returns
+        the tracking result.
+        """
         t0 = cv2.getTickCount()
 
-        h_start = self.id * (FRAME_HEIGHT + FRAME_METADATA)
-        h_end = self.id * (FRAME_HEIGHT + FRAME_METADATA) + FRAME_HEIGHT
-        self.img = frame[h_start:h_end, :]
+        f_start = self.id * (self.height + FRAME_METADATA)
+        f_end = (self.id + 1) * (self.height + FRAME_METADATA)
+        self.frame = frame[f_start:f_end, :]
 
-        metadata = extract_metadata(frame[h_end:h_end + FRAME_METADATA, -FRAME_METADATA_BYTE//3:])
+        # Actual image data, excluding metadata strip
+        self.img = self.frame[:-FRAME_METADATA, :]
+
+        metadata = extract_metadata(self.frame[-FRAME_METADATA:, -FRAME_METADATA_BYTE // self.colors:])
 
         frame_of_interest = not ('index' not in metadata or metadata['index'] == self.__last_frame_idx)
+
+        tks = int(metadata['tickst'][1]) if 'tickst' in metadata else None
+        tms = float(metadata['timest'][1]) if 'timest' in metadata else None
+
+        self.add_stamps(tickstamp=tks, timestamp=tms)
 
         if not frame_of_interest:
             return
@@ -197,7 +255,7 @@ class Tracker:
 
             # cv2.imshow('foi {}'.format(self.id), foi)
 
-            masked = cv2.bitwise_not(foi) * (mask)
+            masked = cv2.bitwise_not(foi) * mask
             masked = cv2.morphologyEx(masked, cv2.MORPH_OPEN, KERNEL_3)
 
             _, thresh = cv2.threshold(masked, self.thresh_detect, 255, cv2.THRESH_BINARY)
@@ -230,12 +288,11 @@ class Tracker:
             if largest_cnt is None:
                 self.kf_age += 1
                 self.results.appendleft(None)
-                self.search_window_size = min(int(self.search_window_size * 1.5), max(FRAME_WIDTH, FRAME_HEIGHT * 2))
+                self.search_window_size = min(int(self.search_window_size * 1.5), max(self.width, self.height * 2))
             else:
                 # center coordinates of contour
-                self.search_window_size = SEARCH_WINDOW_SIZE
+                self.search_window_size = max(SEARCH_WINDOW_SIZE, int(self.search_window_size * .75))
                 cx, cy = centroid(largest_cnt)
-
 
                 self.results.appendleft((cx, cy))
                 self.kf.correct(cx, cy)
@@ -258,8 +315,8 @@ class Tracker:
             # Else assume KF has no useful information about mouse position either.
             if self.kf_age < KF_REGISTRATION_AGE:
                 kf_res = self.kf.predict()
-                kfx = min(max(0, int(kf_res[0])), FRAME_WIDTH)
-                kfy = min(max(0, int(kf_res[1])), FRAME_HEIGHT)
+                kfx = min(max(0, int(kf_res[0])), self.width)
+                kfy = min(max(0, int(kf_res[1])), self.height)
 
                 self.kf_results.appendleft((kfx, kfy))
 
@@ -272,7 +329,7 @@ class Tracker:
                 self.kf_results.appendleft(None)
 
             # Detect LED state (mean value of red channel around led center)
-            led_img = self.img[self.led_pos[1]-1:self.led_pos[1]+2, self.led_pos[0]-1:self.led_pos[0]+2, 0]
+            led_img = self.img[self.led['y'] - 1:self.led['y'] + 2, self.led['x'] - 1:self.led['x'] + 2, 0]
             self.led_state = np.mean(led_img) > self.thresh_led
 
             self.n_frames += 1

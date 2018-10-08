@@ -13,9 +13,11 @@ from camcorder.lib.framesources import Frame
 
 
 class Grabber(threading.Thread):
-    def __init__(self, source, arr, out_queue, trigger_event, idx=0):  # , in_queue, out_queue
+    def __init__(self, cfg, source, arr, out_queue, trigger_event, idx=0):  # , in_queue, out_queue
         super().__init__()
         self.id = idx
+        self.cfg = cfg
+
         self.name = 'Grabber ' + str(self.id)
         try:
             self.source = int(source)
@@ -26,10 +28,11 @@ class Grabber(threading.Thread):
         self.capture = None
         self.frame = None
 
-        self.width = FRAME_WIDTH
-        self.height = FRAME_HEIGHT
+        self.width = cfg['frame_width']
+        self.height = cfg['frame_height']
+        self.colors = cfg['frame_colors']
 
-        shape = (FRAME_HEIGHT + FRAME_METADATA, FRAME_WIDTH, FRAME_COLORS)
+        shape = (self.height + FRAME_METADATA, self.width, self.colors)
         num_bytes = int(np.prod(shape))
 
         with arr.get_lock():
@@ -40,7 +43,7 @@ class Grabber(threading.Thread):
 
         self._write_queue = out_queue
         self._trigger = trigger_event
-        self._avg_fps = FRAME_FPS
+        self._avg_fps = cfg['frame_fps']
         self._t_loop = deque(maxlen=N_FRAMES_FPS_LOG)
 
         logging.debug('Grabber initialization done!')
@@ -53,7 +56,7 @@ class Grabber(threading.Thread):
         self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
 
         # MAXIMUM fps. This is more a recommendation, most cameras don't listen to this.
-        self.capture.set(cv2.CAP_PROP_FPS, FRAME_FPS)
+        self.capture.set(cv2.CAP_PROP_FPS, self.cfg['frame_fps'])
 
         t0 = cv2.getTickCount()
         while not self._trigger.is_set():
@@ -82,6 +85,13 @@ class Grabber(threading.Thread):
 
         logging.debug('Stopping loop in {}!'.format(self.name))
 
+    def embed(self, row, label, data):
+        line = np.zeros(FRAME_METADATA_BYTE, dtype=np.uint8)
+        line[0] = np.array([self.id], dtype=np.uint8)
+        line[1:7] = np.fromstring('{:<6s}'.format(label), dtype=np.uint8)
+        line[7:] = np.array([data], dtype=np.uint64).view(np.uint8)
+        self._fresh_frame[-FRAME_METADATA + row:-FRAME_METADATA + row + 1, -FRAME_METADATA_BYTE // 3:] = line.reshape(1, -1, 3)
+
     def relay_frames(self):
         # Forward frame to Writer via Queue
         try:
@@ -93,17 +103,28 @@ class Grabber(threading.Thread):
         # NOTE: [:] indicates to reuse the buffer
         with self._shared_arr.get_lock():
             self._fresh_frame[:-FRAME_METADATA, :] = self.frame.img
-            self._fresh_frame[-FRAME_METADATA:, -FRAME_METADATA_BYTE:] = 0 # (255, 128, 0)
+            self._fresh_frame[-FRAME_METADATA:, -FRAME_METADATA_BYTE:] = 0  # (255, 128, 0)
 
             # Embed timestamp and frame index
-            index = np.zeros(FRAME_METADATA_BYTE, dtype=np.uint8)
-            index[0] = np.array([self.id], dtype=np.uint8)
-            index[1:7] = np.fromstring('{:<6s}'.format('index'), dtype=np.uint8)
-            index[7:] = np.array([self.frame.index], dtype=np.uint64).view(np.uint8)
-            self._fresh_frame[-FRAME_METADATA:-FRAME_METADATA + 1, -FRAME_METADATA_BYTE//3:] = index.reshape(1, -1, 3)
+            # index = np.zeros(FRAME_METADATA_BYTE, dtype=np.uint8)
+            # index[0] = np.array([self.id], dtype=np.uint8)
+            # index[1:7] = np.fromstring('{:<6s}'.format('index'), dtype=np.uint8)
+            # index[7:] = np.array([self.frame.index], dtype=np.uint64).view(np.uint8)
+            # self._fresh_frame[-FRAME_METADATA:-FRAME_METADATA + 1, -FRAME_METADATA_BYTE // 3:] = index.reshape(1, -1, 3)
+            self.embed(0, 'index', self.frame.index)
 
-            tickstamp = np.zeros(FRAME_METADATA_BYTE, dtype=np.uint8)
-            tickstamp[0] = np.array([self.id], dtype=np.uint8)
-            tickstamp[1:7] = np.fromstring('{:<6s}'.format('tickst'), dtype=np.uint8)
-            tickstamp[7:] = np.array([self.frame.tickstamp], dtype=np.uint64).view(np.uint8)
-            self._fresh_frame[-FRAME_METADATA + 1:-FRAME_METADATA + 2, -FRAME_METADATA_BYTE//3:] = tickstamp.reshape(1, -1, 3)
+            # tickstamp = np.zeros(FRAME_METADATA_BYTE, dtype=np.uint8)
+            # tickstamp[0] = np.array([self.id], dtype=np.uint8)
+            # tickstamp[1:7] = np.fromstring('{:<6s}'.format('tickst'), dtype=np.uint8)
+            # tickstamp[7:] = np.array([self.frame.tickstamp], dtype=np.uint64).view(np.uint8)
+            # self._fresh_frame[-FRAME_METADATA + 1:-FRAME_METADATA + 2, -FRAME_METADATA_BYTE // 3:] = tickstamp.reshape(
+            #     1, -1, 3)
+            self.embed(1, 'tickst', self.frame.tickstamp)
+
+            # tickstamp = np.zeros(FRAME_METADATA_BYTE, dtype=np.uint8)
+            # tickstamp[0] = np.array([self.id], dtype=np.uint8)
+            # tickstamp[1:7] = np.fromstring('{:<6s}'.format('tickst'), dtype=np.uint8)
+            # tickstamp[7:] = np.array([self.frame.tickstamp], dtype=np.uint64).view(np.uint8)
+            # self._fresh_frame[-FRAME_METADATA + 1:-FRAME_METADATA + 2, -FRAME_METADATA_BYTE // 3:] = tickstamp.reshape(
+            #     1, -1, 3)
+            self.embed(2, 'timest', int(self.frame.timestamp))
