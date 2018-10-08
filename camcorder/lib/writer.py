@@ -10,14 +10,17 @@ from camcorder.util.defaults import *
 
 
 class Writer(threading.Thread):
-    def __init__(self, in_queue, ev_alive, ev_recording, ev_trial_active, idx=0):
+    def __init__(self, cfg, in_queue, ev_alive, ev_recording, ev_trial_active, idx=0):
         super().__init__()
         self.id = idx
+        self.cfg = cfg
+
         self.name = 'Writer ' + str(self.id)
         self.writer = None
         self.logger = None
 
         self.n_frames = 0
+
         self.width = None
         self.height = None
         self.frame = None
@@ -68,7 +71,6 @@ class Writer(threading.Thread):
 
         self.logger = None
 
-
     def run(self):
         logging.debug('Starting loop in {}!'.format(self.name))
         try:
@@ -96,7 +98,7 @@ class Writer(threading.Thread):
                         self.logger.writerow(metadata)
 
             logging.debug('Stopping loop in {}!'.format(self.name))
-        except:
-            raise
+        except BaseException as e:
+            raise e
         finally:
             self.stop_recording()

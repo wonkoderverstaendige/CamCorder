@@ -1,9 +1,12 @@
 #!/usr/bin/env python
-import ctypes
+import cv2
 import time
+import yaml
+import ctypes
 import argparse
 import logging
 import threading
+import pkg_resources
 from pathlib import Path
 from queue import Queue
 import multiprocessing as mp
@@ -22,7 +25,7 @@ SHARED_ARR = None
 
 
 class HexTrack:
-    def __init__(self, sources, shared_arr, frame_shape):
+    def __init__(self, cfg, nodes, shared_arr):
         threading.current_thread().name = 'HexTrack'
 
         # Control events
@@ -35,41 +38,45 @@ class HexTrack:
         self._loop_times = deque(maxlen=30)
 
         # List of video sources
-        self.sources = sources
+        self.cfg = cfg
+        self.sources = cfg['frame_sources']
 
         # dummy
         self.denoising = False
 
-        w, h, c = frame_shape
+        self.w = cfg['frame_width']
+        self.h = cfg['frame_height'] + FRAME_METADATA
+        self.c = cfg['frame_colors']
 
         # Shared array population
         with shared_arr.get_lock():
             self._shared_arr = shared_arr
             logging.debug('Grabber shared array: {}'.format(self._shared_arr))
-            self.frame = buf_to_numpy(self._shared_arr, shape=(h * len(sources), w, c))
+            self.frame = buf_to_numpy(self._shared_arr, shape=(self.h * len(self.sources), self.w, self.c))
         self.paused_frame = np.zeros_like(self.frame)
 
+
         # Allocate scrolling frame with node visits
-        self.disp_frame = np.zeros((h * len(sources), w + NODE_FRAME_WIDTH, 3), dtype=np.uint8)
+        self.disp_frame = np.zeros((self.h * len(self.sources), self.w + NODE_FRAME_WIDTH, 3), dtype=np.uint8)
         self.disp_frame[:1] = NODE_FRAME_FG_INACTIVE
 
         # Frame queues for video file output
-        self.queues = [Queue(maxsize=16) for _ in range(len(sources))]
+        self.queues = [Queue(maxsize=16) for _ in range(len(self.sources))]
 
         # Frame acquisition objects
 
-        self.grabbers = [Grabber(source=self.sources[n], arr=self._shared_arr, out_queue=self.queues[n],
-                                 trigger_event=self.ev_stop, idx=n) for n in range(len(sources))]
+        self.grabbers = [Grabber(cfg=self.cfg, source=self.sources[n], arr=self._shared_arr, out_queue=self.queues[n],
+                                 trigger_event=self.ev_stop, idx=n) for n in range(len(self.sources))]
 
         # Video storage writers
-        self.writers = [Writer(in_queue=self.queues[n], ev_alive=self.ev_stop, ev_recording=self.ev_recording,
-                               ev_trial_active=self.ev_trial_active, idx=n) for n in range(len(sources))]
+        self.writers = [Writer(cfg=self.cfg, in_queue=self.queues[n], ev_alive=self.ev_stop, ev_recording=self.ev_recording,
+                               ev_trial_active=self.ev_trial_active, idx=n) for n in range(len(self.sources))]
 
         # Online tracker
-        self.trackers = [Tracker(idx=n) for n in range(len(sources))]
+        self.trackers = [Tracker(cfg=self.cfg, nodes=nodes[n], idx=n) for n in range(len(self.sources))]
 
         # Start up threads/processes
-        for n in range(len(sources)):
+        for n in range(len(self.sources)):
             self.grabbers[n].start()
             self.writers[n].start()
 
@@ -100,31 +107,31 @@ class HexTrack:
                 frame_idx += 1
                 delta = NODE_FRAME_STEP_SCROLL
 
-                self.disp_frame[:, :FRAME_WIDTH] = frame
+                self.disp_frame[:, :self.w] = frame
 
                 trial_active = self.ev_trial_active.is_set()
                 fg_col = NODE_FRAME_FG_ACTIVE if trial_active else NODE_FRAME_FG_INACTIVE
                 bg_col = NODE_FRAME_BG_ACTIVE if trial_active else NODE_FRAME_BG_INACTIVE
 
-                self.disp_frame[delta:, FRAME_WIDTH:] = self.disp_frame[:-delta, FRAME_WIDTH:]
-                self.disp_frame[:delta, FRAME_WIDTH:] = bg_col
+                self.disp_frame[delta:, self.w:] = self.disp_frame[:-delta, self.w:]
+                self.disp_frame[:delta, self.w:] = bg_col
 
-                self.disp_frame[:delta, FRAME_WIDTH + NODE_FRAME_WIDTH - SYNC_FRAME_WIDTH:] = NODE_FRAME_BG_INACTIVE
+                self.disp_frame[:delta, self.w + NODE_FRAME_WIDTH - SYNC_FRAME_WIDTH:] = NODE_FRAME_BG_INACTIVE
 
                 for tracker in self.trackers:
                     # Draw colored bands for detected LEDs
                     if tracker.led_state:
                         col = [25, 25, 25]
                         col[tracker.id + 1] = 127
-                        self.disp_frame[:delta, FRAME_WIDTH + NODE_FRAME_WIDTH - SYNC_FRAME_WIDTH:] = \
-                            self.disp_frame[:delta, FRAME_WIDTH + NODE_FRAME_WIDTH - SYNC_FRAME_WIDTH:] + col
+                        self.disp_frame[:delta, self.w + NODE_FRAME_WIDTH - SYNC_FRAME_WIDTH:] = \
+                            self.disp_frame[:delta, self.w + NODE_FRAME_WIDTH - SYNC_FRAME_WIDTH:] + col
 
                     if not tracker.node_updated_presented:
                         tracker.node_updated_presented = True
                         # Put most recent node visit into the scrolling node frame
                         if tracker.last_node is not None:
                             cv2.putText(self.disp_frame, '{: >2d}'.format(tracker.last_node),
-                                        (FRAME_WIDTH + (5 + tracker.id * 50), 20),
+                                        (self.w + (5 + tracker.id * 50), 20),
                                         FONT, NODE_FRAME_FONT_SIZE, fg_col, thickness=NODE_FRAME_FONT_WEIGHT)
 
                 # Timestamp overlay
@@ -230,8 +237,10 @@ class HexTrack:
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-s', '--sources', nargs='*', help='List of sources to read from', default=FRAME_SOURCES)
+    parser.add_argument('-s', '--sources', nargs='*', help='List of sources to read from')
     parser.add_argument('-d', '--debug', action='store_true', help='Debug mode')
+    parser.add_argument('-c', '--config', help='Configuration file')
+    parser.add_argument('-n', '--nodes', help='Node location file')
 
     cli_args = parser.parse_args()
 
@@ -250,19 +259,33 @@ if __name__ == '__main__':
     logging.getLogger('').addHandler(fh)
 
     # Construct the shared array to fit all frames
-    width = FRAME_WIDTH
-    height = FRAME_HEIGHT + FRAME_METADATA
-    colors = FRAME_COLORS
-    fps = FRAME_FPS
-    n_views = len(cli_args.sources)
-    num_bytes = width * height * colors * n_views
+    cfg_path = pkg_resources.resource_filename(__name__, 'resources/default_config.yml')
+    if cli_args.config is not None:
+        cfg_path = Path(cli_args.config)
+        if not cfg_path.exists():
+            raise FileNotFoundError('Config file not found!')
 
+    with open(cfg_path, 'r') as cfg_f:
+        cfg = yaml.load(cfg_f)
+
+    if cli_args.sources is not None:
+        cfg['frame_sources'] = cli_args.sources
+
+    num_bytes = cfg['frame_width'] * (cfg['frame_height'] + FRAME_METADATA) * cfg['frame_colors'] * len(cfg['frame_sources'])
     SHARED_ARR = mp.Array(ctypes.c_ubyte, num_bytes)
-
     logging.debug('Created shared array: {}'.format(SHARED_ARR))
-    logging.debug('Intended shared array shape {}x{}x{}'.format(width, height * n_views, colors))
+
+    # Load node array
+    nodes_path = pkg_resources.resource_filename(__name__, 'resources/default_nodes.yml')
+    if cli_args.nodes is not None:
+        nodes_path = Path(cli_args.config)
+        if not nodes_path.exists():
+            raise FileNotFoundError('Node file not found!')
+
+    with open(nodes_path, 'r') as nf:
+        nodes = yaml.load(nf)
 
     mp.freeze_support()
 
-    ht = HexTrack(sources=cli_args.sources, shared_arr=SHARED_ARR, frame_shape=(width, height, colors))
+    ht = HexTrack(cfg=cfg, nodes=nodes['nodes'], shared_arr=SHARED_ARR)
     ht.loop()
