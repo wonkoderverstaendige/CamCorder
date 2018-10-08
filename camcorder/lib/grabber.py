@@ -12,31 +12,24 @@ from camcorder.util.utilities import buf_to_numpy
 
 
 class Frame:
-    """Container class for frames. Holds additional metadata aside from the
-    actual image information."""
-
-    def __init__(self, index, img, source_type, timestamp=None, add_timestamp=False, tickstamp=None,
-                 add_tickstamp=False):
-        self.index = index
+    def __init__(self, index, img, source_type, timestamp=None, tickstamp=None, add_stamps=True):
+        """Container class for frames. Holds additional metadata aside from the
+        actual image information."""
         self.img = img
+
+        self.index = index
         self.source_type = source_type
         self.timestamp = timestamp if timestamp is not None else time.time()
         self.tickstamp = tickstamp if tickstamp is not None else \
             int((1000 * cv2.getTickCount()) / cv2.getTickFrequency())
 
-        time_text = time.strftime("%Y-%m-%d_%H:%M:%S", time.localtime(self.timestamp))
+        time_text = time.strftime("%Y-%m-%d_%H_%M_%S", time.localtime(self.timestamp))
         ms = "{0:03d}".format(int((self.timestamp - int(self.timestamp)) * 1000))
         self.time_text = ".".join([time_text, ms])
 
         # Add timestamp to image if from a live source
-        if add_timestamp or add_tickstamp:
-            txt_elements = []
-            if add_timestamp:
-                txt_elements.append(self.time_text)
-            if add_tickstamp:
-                txt_elements.append(str(self.tickstamp))
-
-            self.add_overlay(' - '.join(txt_elements))
+        if add_stamps or FORCE_TIMESTAMPS:
+            self.add_stamps()
 
     @property
     def width(self):
@@ -50,15 +43,33 @@ class Frame:
     def shape(self):
         return self.img.shape
 
-    def add_overlay(self, text):
-        # text_overlay(self.img, text, 3, self.img.shape[0], f_scale=1.)
-        cv2.putText(img=self.img, text=text,
-                    org=(3, self.height + 2), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=0.8,
-                    color=(255, 255, 255), thickness=1, lineType=cv2.LINE_AA)
+    def add_stamps(self):
+        """Add tick- and timestamp to the unused section of the metadata frame.
+        TODO: This should happen in Grabber, not the tracker, to record this in the video, too.
+        """
+        ty = self.img.shape[0] - 4
+        tx = self.width - 225
+        thickness = 1
+        font_scale = 1.2
+        bg, fg = (0, 0, 0), (255, 255, 255)
+
+        if self.tickstamp is not None:
+            t_str = '{} '.format((int(self.tickstamp)))
+            cv2.putText(self.img, t_str, (tx, ty), FONT, font_scale, fg,
+                        thickness, lineType=cv2.LINE_AA)
+            tx += 135
+
+        if self.timestamp is not None:
+            t_str = time.strftime("%H:%M:%S.{}   %d.%m.%Y", time.localtime(self.timestamp))
+            ms = "{0:03d}".format(int((self.timestamp - int(self.timestamp)) * 1000))
+            t_str = t_str.format(ms)
+
+            cv2.putText(self.img, t_str, (tx, ty), FONT, font_scale, fg,
+                        thickness, lineType=cv2.LINE_AA)
 
 
 class Grabber(threading.Thread):
-    def __init__(self, cfg, source, arr, out_queue, trigger_event, idx=0):  # , in_queue, out_queue
+    def __init__(self, cfg, source, arr, out_queue, trigger_event, idx=0):
         super().__init__()
         self.id = idx
         self.cfg = cfg
@@ -68,6 +79,8 @@ class Grabber(threading.Thread):
             self.source = int(source)
         except ValueError:
             self.source = source
+
+        self.is_live = not isinstance(self.source, str)
 
         self.n_frames = 0
         self.capture = None
@@ -80,6 +93,7 @@ class Grabber(threading.Thread):
         shape = (self.height + FRAME_METADATA_H, self.width, self.colors)
         num_bytes = int(np.prod(shape))
 
+        # Attach to shared buffer
         with arr.get_lock():
             self._shared_arr = arr
             logging.debug('Grabber shared array: {}'.format(arr))
@@ -97,6 +111,7 @@ class Grabber(threading.Thread):
         logging.debug('Starting loop in {}!'.format(self.name))
         self.capture = cv2.VideoCapture(self.source)
 
+        # Request source to have
         self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
         self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
 
@@ -108,14 +123,16 @@ class Grabber(threading.Thread):
             rt, frame = self.capture.read()
             if not rt:
                 continue
-            self.frame = Frame(self.n_frames, frame, 'Grabber', add_timestamp=FRAME_ADD_TIMESTAMP,
-                               add_tickstamp=FRAME_ADD_TICKSTAMP)
+
+            # Make space for the metadata bar at the bottom of each frame
+            frame.resize((frame.shape[0] + FRAME_METADATA_H, frame.shape[1], frame.shape[2]))
+            self.frame = Frame(self.n_frames, frame, 'Grabber', add_stamps=self.is_live)
 
             # Send frames to attached threads/processes
             self.relay_frames()
 
             # Slow down "replay" if the image source is a video file to emulate realtime replay
-            if isinstance(self.source, str):
+            if not self.is_live:
                 time.sleep(1 / self.capture.get(cv2.CAP_PROP_FPS) / PLAYBACK_SPEEDUP)
             self.n_frames += 1
 
@@ -130,7 +147,9 @@ class Grabber(threading.Thread):
 
         logging.debug('Stopping loop in {}!'.format(self.name))
 
-    def embed(self, row, label, data):
+    def embed_metadata(self, row, label, data):
+        """Embed metadata into pixels. Note: Data has to be int64-able.
+        """
         line = np.zeros(FRAME_METADATA_BYTE, dtype=np.uint8)
         line[0] = np.array([self.id], dtype=np.uint8)
         line[1:7] = np.fromstring('{:<6s}'.format(label), dtype=np.uint8)
@@ -138,7 +157,8 @@ class Grabber(threading.Thread):
         self._fresh_frame[-FRAME_METADATA_H + row:-FRAME_METADATA_H + row + 1, -FRAME_METADATA_BYTE // 3:] = line.reshape(1, -1, 3)
 
     def relay_frames(self):
-        # Forward frame to Writer via Queue
+        """Forward acquired image to entities downstream via queues or shared array.
+        """
         try:
             self._write_queue.put(self.frame, timeout=.5)
         except Full:
@@ -147,29 +167,8 @@ class Grabber(threading.Thread):
         # Forward frame for tracking and display
         # NOTE: [:] indicates to reuse the buffer
         with self._shared_arr.get_lock():
-            self._fresh_frame[:-FRAME_METADATA_H, :] = self.frame.img
-            self._fresh_frame[-FRAME_METADATA_H:, -FRAME_METADATA_BYTE:] = 0  # (255, 128, 0)
+            self._fresh_frame[:] = self.frame.img
 
-            # Embed timestamp and frame index
-            # index = np.zeros(FRAME_METADATA_BYTE, dtype=np.uint8)
-            # index[0] = np.array([self.id], dtype=np.uint8)
-            # index[1:7] = np.fromstring('{:<6s}'.format('index'), dtype=np.uint8)
-            # index[7:] = np.array([self.frame.index], dtype=np.uint64).view(np.uint8)
-            # self._fresh_frame[-FRAME_METADATA:-FRAME_METADATA + 1, -FRAME_METADATA_BYTE // 3:] = index.reshape(1, -1, 3)
-            self.embed(0, 'index', self.frame.index)
-
-            # tickstamp = np.zeros(FRAME_METADATA_BYTE, dtype=np.uint8)
-            # tickstamp[0] = np.array([self.id], dtype=np.uint8)
-            # tickstamp[1:7] = np.fromstring('{:<6s}'.format('tickst'), dtype=np.uint8)
-            # tickstamp[7:] = np.array([self.frame.tickstamp], dtype=np.uint64).view(np.uint8)
-            # self._fresh_frame[-FRAME_METADATA + 1:-FRAME_METADATA + 2, -FRAME_METADATA_BYTE // 3:] = tickstamp.reshape(
-            #     1, -1, 3)
-            self.embed(1, 'tickst', self.frame.tickstamp)
-
-            # tickstamp = np.zeros(FRAME_METADATA_BYTE, dtype=np.uint8)
-            # tickstamp[0] = np.array([self.id], dtype=np.uint8)
-            # tickstamp[1:7] = np.fromstring('{:<6s}'.format('tickst'), dtype=np.uint8)
-            # tickstamp[7:] = np.array([self.frame.tickstamp], dtype=np.uint64).view(np.uint8)
-            # self._fresh_frame[-FRAME_METADATA + 1:-FRAME_METADATA + 2, -FRAME_METADATA_BYTE // 3:] = tickstamp.reshape(
-            #     1, -1, 3)
-            self.embed(2, 'timest', int(self.frame.timestamp))
+            self.embed_metadata(row=0, label='index', data=self.frame.index)
+            self.embed_metadata(row=1, label='tickst', data=self.frame.tickstamp)
+            self.embed_metadata(row=2, label='timest', data=int(self.frame.timestamp))

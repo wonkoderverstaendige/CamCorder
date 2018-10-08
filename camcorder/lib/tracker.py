@@ -174,33 +174,6 @@ class Tracker:
                 else:
                     cv2.line(self.img, (x1, y1), (x2, y2), color=(50, 50, 255), thickness=1)
 
-
-    def add_stamps(self, tickstamp=None, timestamp=None):
-        """Add tick- and timestamp to the unused section of the metadata frame.
-        TODO: This should happen in Grabber, not the tracker, to record this in the video, too.
-        """
-        ty = self.frame.shape[0] - 4
-        tx = self.width - 380
-        thickness = 1
-        font_scale = 1.2
-        bg, fg = (0, 0, 0), (255, 255, 255)
-
-
-        if tickstamp is not None:
-            t_str = '{} '.format((int(tickstamp)))
-            cv2.putText(self.frame, t_str, (tx, ty), FONT, font_scale, fg,
-                        thickness, lineType=cv2.LINE_AA)
-            tx += 160
-
-
-        if timestamp is not None:
-            t_str = time.strftime("%H:%M:%S %d.%m.%Y", time.localtime(timestamp))
-            ms = "{0:03d}".format(int((timestamp - int(timestamp)) * 1000))
-            self.time_text = ".".join([t_str, ms])
-
-            cv2.putText(self.frame, t_str, (tx, ty), FONT, font_scale, fg,
-                        thickness, lineType=cv2.LINE_AA)
-
     def apply(self, frame):
         """Apply a frame to the current state of the tracker. Will apply the mask, find a large enough
         blob in the masked image and try to get its centroid. Updates the Kalman filter and returns
@@ -222,7 +195,7 @@ class Tracker:
         tks = int(metadata['tickst'][1]) if 'tickst' in metadata else None
         tms = float(metadata['timest'][1]) if 'timest' in metadata else None
 
-        self.add_stamps(tickstamp=tks, timestamp=tms)
+        # self.add_stamps(tickstamp=tks, timestamp=tms)
 
         if not frame_of_interest:
             return
