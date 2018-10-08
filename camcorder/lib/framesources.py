@@ -12,59 +12,12 @@ import cv2
 import numpy as np
 
 from camcorder.util.utilities import text_overlay
-
-try:
-    import zmq
-except ImportError:
-    zmq = None
-
-
-class Frame:
-    """Container class for frames. Holds additional metadata aside from the
-    actual image information."""
-
-    def __init__(self, index, img, source_type, timestamp=None, add_timestamp=False, tickstamp=None,
-                 add_tickstamp=False):
-        self.index = index
-        self.img = img
-        self.source_type = source_type
-        self.timestamp = timestamp if timestamp is not None else time.time()
-        self.tickstamp = tickstamp if tickstamp is not None else \
-            int((1000 * cv2.getTickCount()) / cv2.getTickFrequency())
-
-        time_text = time.strftime("%Y-%m-%d_%H:%M:%S", time.localtime(self.timestamp))
-        ms = "{0:03d}".format(int((self.timestamp - int(self.timestamp)) * 1000))
-        self.time_text = ".".join([time_text, ms])
-
-        # Add timestamp to image if from a live source
-        if add_timestamp or add_tickstamp:
-            txt_elements = []
-            if add_timestamp:
-                txt_elements.append(self.time_text)
-            if add_tickstamp:
-                txt_elements.append(str(self.tickstamp))
-
-            self.add_overlay(' - '.join(txt_elements))
-
-    @property
-    def width(self):
-        return self.img.shape[0]
-
-    @property
-    def height(self):
-        return self.img.shape[1]
-
-    @property
-    def shape(self):
-        return self.img.shape
-
-    def add_overlay(self, text):
-        # text_overlay(self.img, text, 3, self.img.shape[0], f_scale=1.)
-        cv2.putText(img=self.img, text=text,
-                    org=(3, self.height + 2), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=0.8,
-                    color=(255, 255, 255), thickness=1, lineType=cv2.LINE_AA)
-
 #
+# try:
+#     import zmq
+# except ImportError:
+#     zmq = None
+
 # class FrameSource(object):
 #     """General purpose class for frame sources."""
 #     def __init__(self, *args, **kwargs):

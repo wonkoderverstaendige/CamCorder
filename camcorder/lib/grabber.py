@@ -9,7 +9,52 @@ import numpy as np
 
 from camcorder.util.defaults import *
 from camcorder.util.utilities import buf_to_numpy
-from camcorder.lib.framesources import Frame
+
+
+class Frame:
+    """Container class for frames. Holds additional metadata aside from the
+    actual image information."""
+
+    def __init__(self, index, img, source_type, timestamp=None, add_timestamp=False, tickstamp=None,
+                 add_tickstamp=False):
+        self.index = index
+        self.img = img
+        self.source_type = source_type
+        self.timestamp = timestamp if timestamp is not None else time.time()
+        self.tickstamp = tickstamp if tickstamp is not None else \
+            int((1000 * cv2.getTickCount()) / cv2.getTickFrequency())
+
+        time_text = time.strftime("%Y-%m-%d_%H:%M:%S", time.localtime(self.timestamp))
+        ms = "{0:03d}".format(int((self.timestamp - int(self.timestamp)) * 1000))
+        self.time_text = ".".join([time_text, ms])
+
+        # Add timestamp to image if from a live source
+        if add_timestamp or add_tickstamp:
+            txt_elements = []
+            if add_timestamp:
+                txt_elements.append(self.time_text)
+            if add_tickstamp:
+                txt_elements.append(str(self.tickstamp))
+
+            self.add_overlay(' - '.join(txt_elements))
+
+    @property
+    def width(self):
+        return self.img.shape[0]
+
+    @property
+    def height(self):
+        return self.img.shape[1]
+
+    @property
+    def shape(self):
+        return self.img.shape
+
+    def add_overlay(self, text):
+        # text_overlay(self.img, text, 3, self.img.shape[0], f_scale=1.)
+        cv2.putText(img=self.img, text=text,
+                    org=(3, self.height + 2), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=0.8,
+                    color=(255, 255, 255), thickness=1, lineType=cv2.LINE_AA)
 
 
 class Grabber(threading.Thread):
@@ -42,7 +87,7 @@ class Grabber(threading.Thread):
             logging.debug('Numpy shared buffer at {}'.format(hex(self._fresh_frame.ctypes.data)))
 
         self._write_queue = out_queue
-        self._trigger = trigger_event
+        self._ev_terminate = trigger_event
         self._avg_fps = cfg['frame_fps']
         self._t_loop = deque(maxlen=N_FRAMES_FPS_LOG)
 
@@ -59,7 +104,7 @@ class Grabber(threading.Thread):
         self.capture.set(cv2.CAP_PROP_FPS, self.cfg['frame_fps'])
 
         t0 = cv2.getTickCount()
-        while not self._trigger.is_set():
+        while not self._ev_terminate.is_set():
             rt, frame = self.capture.read()
             if not rt:
                 continue
