@@ -102,7 +102,7 @@ class Grabber(threading.Thread):
         logging.debug('Grabber initialization done!')
 
     def run(self):
-        logging.debug('Starting loop in {}!'.format(self.name))
+        logging.debug('Starting loop in {} with source {}'.format(self.name, self.source))
         self.capture = cv2.VideoCapture(self.source)
 
         # Request source to have

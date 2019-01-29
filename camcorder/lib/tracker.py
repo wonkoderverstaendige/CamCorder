@@ -174,7 +174,6 @@ class Tracker:
                 else:
                     cv2.line(self.img, (x1, y1), (x2, y2), color=(50, 50, 255), thickness=1)
 
-
     def apply(self, frame):
         """Apply a frame to the current state of the tracker. Will apply the mask, find a large enough
         blob in the masked image and try to get its centroid. Updates the Kalman filter and returns

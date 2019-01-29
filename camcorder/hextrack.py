@@ -249,6 +249,8 @@ class HexTrack:
         for writer in self.writers:
             writer.join()
         logging.debug('All Writers joined!')
+        cv2.destroyAllWindows()
+        raise SystemExit
 
 
 if __name__ == '__main__':
