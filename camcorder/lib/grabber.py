@@ -1,3 +1,4 @@
+import os
 import time
 import logging
 import threading
@@ -116,6 +117,12 @@ class Grabber(threading.Thread):
         while not self._ev_terminate.is_set():
             rt, frame = self.capture.read()
             if not rt:
+                continue
+
+            if not self.n_frames:
+                logging.info('Adjusting brightness on source {}'.format(self.source))
+                os.system('adjust_brightness {}'.format(self.source))
+                self.n_frames += 1
                 continue
 
             # Make space for the metadata bar at the bottom of each frame

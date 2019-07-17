@@ -82,6 +82,7 @@ class HexTrack:
 
         cv2.namedWindow('HexTrack', cv2.WINDOW_AUTOSIZE)
 
+
         logging.debug('HexTrack initialization done!')
 
         self.paused = False
@@ -284,7 +285,7 @@ if __name__ == '__main__':
             raise FileNotFoundError('Config file not found!')
 
     with open(cfg_path, 'r') as cfg_f:
-        cfg = yaml.load(cfg_f)
+        cfg = yaml.load(cfg_f, Loader=yaml.FullLoader)
 
     if cli_args.sources is not None:
         cfg['frame_sources'] = cli_args.sources
@@ -302,7 +303,7 @@ if __name__ == '__main__':
             raise FileNotFoundError('Node file not found!')
 
     with open(nodes_path, 'r') as nf:
-        nodes = yaml.load(nf)
+        nodes = yaml.load(nf, Loader=yaml.FullLoader)
 
     mp.freeze_support()
 

@@ -236,7 +236,7 @@ class Tracker:
             _, thresh = cv2.threshold(masked, self.thresh_detect, 255, cv2.THRESH_BINARY)
             thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, KERNEL_3)
 
-            _, contours, hierarchy = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
             # find largest contour
             largest_cnt, largest_area = None, 0

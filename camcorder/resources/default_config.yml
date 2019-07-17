@@ -8,7 +8,7 @@ frame_metadata: 20
 frame_fps: 15.
 
 # Video sources
-frame_sources: [0, 1]
+frame_sources: [0, 2]
 
 # Add timestamp and/or tickstamp to frame image
 frame_add_tickstamp: False
