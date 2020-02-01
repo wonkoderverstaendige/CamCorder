@@ -33,7 +33,7 @@ class Writer(threading.Thread):
         self.recording = False
 
         self.codec = cv2.VideoWriter_fourcc(*VIDEO_CODEC)  # cv2.VideoWriter_fourcc(*'MP4V')
-        self.video_fname = Path.home() / "Videos/hextrack/{}_cam_{}"
+        self.video_fname = cfg['outpath'] / "{}_cam_{}"  # Path.home() / "Videos/hextrack/{}_cam_{}"
         self.video_fname = str(self.video_fname.as_posix())
 
         logging.debug('Writer initialization done!')

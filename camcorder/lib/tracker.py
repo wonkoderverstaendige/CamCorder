@@ -54,7 +54,7 @@ class TrackerResult:
 
 
 class Tracker:
-    def __init__(self, cfg, nodes, idx=0, thresh_mask=100, thresh_detect=35, thresh_led=70):
+    def __init__(self, cfg, nodes, idx=0, thresh_mask=100, thresh_detect=35, thresh_led=50):
         super().__init__()
         self.id = idx
         self.cfg = cfg

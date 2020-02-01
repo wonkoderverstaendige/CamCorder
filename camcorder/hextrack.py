@@ -223,7 +223,7 @@ class HexTrack:
             for tracker in self.trackers:
                 tracker.has_mask = False
 
-        elif key in [ord('t'), ord('.'), 85, 86]:
+        elif key in [ord('t'), ord('b'), 85, 98]:
             # Start/stop a trial period
             if not self.ev_trial_active.is_set():
                 self.ev_trial_active.set()
@@ -263,7 +263,8 @@ if __name__ == '__main__':
 
     cli_args = parser.parse_args()
 
-    logfile = Path.home() / "Videos/hextrack/{}_hextrack_log".format(
+    output_path = Path('/mnt/Data/hextrack')  # Path.home() / 'Videos'
+    logfile = output_path / "{}_hextrack_log".format(
         time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime(time.time())))
 
     if cli_args.debug:
@@ -290,6 +291,7 @@ if __name__ == '__main__':
     if cli_args.sources is not None:
         cfg['frame_sources'] = cli_args.sources
 
+    cfg['outpath'] = output_path
     num_bytes = cfg['frame_width'] * (cfg['frame_height'] + FRAME_METADATA_H) * cfg['frame_colors'] * len(
         cfg['frame_sources'])
     SHARED_ARR = mp.Array(ctypes.c_ubyte, num_bytes)
